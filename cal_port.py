@@ -7,8 +7,6 @@ def read_config():
     print(config['Ratio'])
     return config
 
-
-
 def validation(config):
     if round(config['Ratio'].sum(),3) != 1:
         print(f"your portfolio ratio is not equal to 1, current ratio is {config['Ratio'].sum()}, please adjust the ratio until sum of the portfolio = 1")
@@ -16,7 +14,6 @@ def validation(config):
     else:
         print("Validation passed")
         print("Calculating the gap between the existing amount and adjusted amount")
-
 
 def rabalance_portfolio(config):
     validation(config)
