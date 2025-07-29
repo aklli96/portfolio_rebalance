@@ -20,10 +20,17 @@ def fetch_ibkr_portfolio():
     # Connect to IB Gateway (default port is 4002, TWS is 7497)
     ib.connect('127.0.0.1', 4002, clientId=1)
     positions = ib.positions()
+    # Get account summary for cash
+    account_summary = ib.accountSummary()
+    # Extract cash balance (Base Currency)
+    cash = None
+    for item in account_summary:
+        if item.tag == 'TotalCashValue':
+            cash = float(item.value)
+            break
     # Convert positions to a DataFrame
     data = []
     for pos in positions:
-        ticker = ib.reqMktData(pos.contract, '', False, False)
         ib.sleep(1)  # Give time for price to update
         data.append({
             'Ticker': pos.contract.symbol,
@@ -32,6 +39,13 @@ def fetch_ibkr_portfolio():
             'CurrentValue': pos.position * pos.avgCost
         })
     ib.disconnect()
+    # Add cash as a row in the DataFrame
+    data.append({
+        'Ticker': 'CASH',
+        'Quantity': None,
+        'AvgCost': None,
+        'CurrentValue': cash
+    })
     df = pd.DataFrame(data)
     return df
 
@@ -50,4 +64,3 @@ def rabalance_portfolio(config,current_position):
         else:
             print(f"""Please withdraw {abs(tb_changed_amt)} from Ticker: {fetched_portfolio['Ticker'][i]}""")
         dict[fetched_portfolio['Ticker'][i]] = tb_changed_amt
-    print(dict)
