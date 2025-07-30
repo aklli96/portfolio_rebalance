@@ -4,7 +4,7 @@ Internal project - HF
 This is the portfolio rebalancer, ensuring your position is aligning your ratio setting in [config file](https://github.com/aklli96/portfolio_rebalance/blob/main/portfolio_setting.csv)
 
 
-## Pre-requite
+## Prerequisite setup
 
 Download and Install [IB gateway](https://www.interactivebrokers.com.hk/en/trading/ibgateway-latest.php)
 
@@ -18,4 +18,13 @@ python -m venv ib_position_rebalancer
 Install the relevant python packages
 ```bash
 pip install -r requirements.txt
+```
+
+## How to use this app
+Portfolio rebalancing
+1. Launch the IB gateway
+2. Fill your preference in portfolio_setting.csv, please be reminded that the ticker name should same as the ticker name in IBKR
+3. Run the program
+```bash
+python main.py
 ```
