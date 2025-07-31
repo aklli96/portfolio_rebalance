@@ -64,3 +64,4 @@ def rabalance_portfolio(config,current_position):
         else:
             print(f"""Please withdraw {abs(tb_changed_amt)} from Ticker: {fetched_portfolio['Ticker'][i]}""")
         dict[fetched_portfolio['Ticker'][i]] = tb_changed_amt
+    return dict
