@@ -53,7 +53,12 @@ def fetch_ibkr_portfolio():
     df = pd.DataFrame(data)
     return df
 
-def rabalance_portfolio(config,current_position):
+def rabalance_portfolio(config, current_position, output_callback=None):
+    def default_output(msg):
+        print(msg)
+
+    output = output_callback if output_callback is not None else default_output
+
     validation(config)
     dict = {}
     # Merge MarketPrice into config for calculation
@@ -61,7 +66,7 @@ def rabalance_portfolio(config,current_position):
     fetched_portfolio = config.merge(market_info, on='Ticker', how='left')
     fetched_portfolio.fillna(0, inplace=True)
     amount_in_pool = fetched_portfolio['CurrentValue'].sum()
-    print("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
+    output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
     for i in range(len(fetched_portfolio['Ratio'])):
         tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - fetched_portfolio['CurrentValue'][i]
         market_price = fetched_portfolio['MarketPrice'][i]
@@ -71,7 +76,7 @@ def rabalance_portfolio(config,current_position):
         else:
             shares_to_trade = 0
         action = "Buy" if tb_changed_amt > 0 else "Sell"
-        print(f"{action} {abs(shares_to_trade):.2f} shares of {ticker} (amount: {abs(tb_changed_amt):.2f})")
-        print(f"  - Amount: {tb_changed_amt:.2f}, Shares: {shares_to_trade:.2f}")
+        output(f"{action} {abs(shares_to_trade):.2f} shares of {ticker} (amount: {abs(tb_changed_amt):.2f})")
+        output(f"  - Amount: {tb_changed_amt:.2f}, Shares: {shares_to_trade:.2f}")
         dict[ticker] = {'amount': tb_changed_amt, 'shares': shares_to_trade}
     return dict
