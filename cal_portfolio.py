@@ -41,7 +41,6 @@ def fetch_ibkr_portfolio():
             'MarketPrice': market_price,
             'CurrentValue': pos.position * market_price
         })
-    ib.disconnect()
     # Add cash as a row in the DataFrame
     data.append({
         'Ticker': 'CASH',

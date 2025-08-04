@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 import cal_portfolio
 import gen_report
+import sys
+
 
 class PortfolioApp:
     def __init__(self, root):
@@ -69,13 +71,20 @@ class PortfolioApp:
         self.output_box.config(state='disabled')
 
     def gen_report(self):
-        # Collect output via callback
+        # Collect output via callback and capture print output from gen_report
         output_lines = []
         def gui_output(msg):
             output_lines.append(str(msg))
         result = cal_portfolio.rabalance_portfolio(self.config, self.current_position, output_callback=gui_output)
-        gen_report.save_rebalance_to_excel(result, self.config)
+        # Capture print output from gen_report
+        try:
+            gen_report.save_rebalance_to_excel(result, self.config)
+        finally:
+            sys.stdout = old_stdout
+        report_output = mystdout.getvalue()
         output = '\n'.join(output_lines)
+        if report_output:
+            output += ('\n' if output else '') + report_output
         self.output_box.config(state='normal')
         self.output_box.delete(1.0, tk.END)
         self.output_box.insert(tk.END, output)
