@@ -1,6 +1,7 @@
 import pandas as pd
 import sys
 from ib_insync import IB
+import math
 
 def read_config():
     config = pd.read_csv('portfolio_setting.csv')
@@ -30,16 +31,18 @@ def fetch_ibkr_portfolio():
             break
     # Convert positions to a DataFrame
     data = []
+
     for pos in positions:
-        ticker_data = ib.reqMktData(pos.contract, '', False, False)
-        ib.sleep(1)  # Give time for price to update
+        ib.reqMarketDataType(3)
+        ticker_data = ib.reqMktData(pos.contract, snapshot=True)
+        ib.sleep(10)  # Give time for price to update
         market_price = ticker_data.marketPrice() if ticker_data.marketPrice() is not None else 0
         data.append({
             'Ticker': pos.contract.symbol,
             'Quantity': pos.position,
             'AvgCost': pos.avgCost,
             'MarketPrice': market_price,
-            'CurrentValue': pos.position * market_price
+            'CurrentValue': round(pos.position * market_price,2)
         })
     # Add cash as a row in the DataFrame
     data.append({
@@ -61,21 +64,25 @@ def rabalance_portfolio(config, current_position, output_callback=None):
     validation(config)
     dict = {}
     # Merge MarketPrice into config for calculation
-    market_info = current_position[['Ticker', 'CurrentValue', 'MarketPrice']]
+    market_info = current_position[['Ticker', 'Quantity', 'AvgCost', 'CurrentValue', 'MarketPrice']]
+
     fetched_portfolio = config.merge(market_info, on='Ticker', how='left')
     fetched_portfolio.fillna(0, inplace=True)
     amount_in_pool = fetched_portfolio['CurrentValue'].sum()
     output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
     for i in range(len(fetched_portfolio['Ratio'])):
-        tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - fetched_portfolio['CurrentValue'][i]
+        tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - (fetched_portfolio['AvgCost'][i] * fetched_portfolio['Quantity'][i])
         market_price = fetched_portfolio['MarketPrice'][i]
         ticker = fetched_portfolio['Ticker'][i]
-        if market_price and market_price > 0:
-            shares_to_trade = tb_changed_amt / market_price
+        if tb_changed_amt and abs(tb_changed_amt) > 0:
+            shares_to_trade = abs(tb_changed_amt) / market_price
+            if shares_to_trade < 1:
+                shares_to_trade = 0
+            else:
+                shares_to_trade = math.floor(shares_to_trade)
         else:
             shares_to_trade = 0
         action = "Buy" if tb_changed_amt > 0 else "Sell"
         output(f"{action} {abs(shares_to_trade):.2f} shares of {ticker} (amount: {abs(tb_changed_amt):.2f})")
-        output(f"  - Amount: {tb_changed_amt:.2f}, Shares: {shares_to_trade:.2f}")
         dict[ticker] = {'amount': tb_changed_amt, 'shares': shares_to_trade}
     return dict
