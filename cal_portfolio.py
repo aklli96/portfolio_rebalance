@@ -8,13 +8,20 @@ def read_config():
     config['Ratio'] = config['Ratio'].str.rstrip('%').astype(float)/100
     return config
 
-def validation(config):
+def validation(config, output_callback=None):
+    def default_output(msg):
+        print(msg)
+    
+    output = output_callback if output_callback is not None else default_output
+    
     if round(config['Ratio'].sum(),3) != 1:
-        print(f"your portfolio ratio is not equal to 1, current ratio is {config['Ratio'].sum()}, please adjust the ratio until sum of the portfolio = 1")
-        sys.exit()
+        msg = f"Your portfolio ratio is not equal to 1, current ratio is {config['Ratio'].sum():.3%}, please adjust the ratio until sum of the portfolio = 1"
+        output(msg)
+        return False
     else:
-        print("Validation passed")
-        print("Calculating the gap between the existing amount and adjusted amount")
+        output("Validation passed")
+        output("Calculating the gap between the existing amount and adjusted amount")
+        return True
 
 def fetch_ibkr_portfolio():
     ib = IB()
@@ -61,7 +68,8 @@ def rabalance_portfolio(config, current_position, output_callback=None):
 
     output = output_callback if output_callback is not None else default_output
 
-    validation(config)
+    if not validation(config, output):
+        return None
     dict = {}
     # Merge MarketPrice into config for calculation
     market_info = current_position[['Ticker', 'Quantity', 'AvgCost', 'CurrentValue', 'MarketPrice']]
