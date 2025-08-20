@@ -1,5 +1,4 @@
 import pandas as pd
-import sys
 from ib_insync import IB
 import math
 
