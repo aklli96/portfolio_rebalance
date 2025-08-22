@@ -86,6 +86,12 @@ class PortfolioApp:
         # Gen report button
         self.report_btn = ttk.Button(btn_frame, text="Gen report", command=self.gen_report)
         self.report_btn.pack(side=tk.LEFT, padx=5)
+        # Refresh button
+        self.refresh_btn = ttk.Button(btn_frame, text="Refresh Current Value", command=self.refresh_current_value)
+        self.refresh_btn.pack(side=tk.LEFT, padx=5)
+        # Disconnect button
+        self.disconnect_btn = ttk.Button(btn_frame, text="Disconnect IBKR", command=self.disconnect_ibkr)
+        self.disconnect_btn.pack(side=tk.LEFT, padx=5)
 
         # Output text box
         self.output_box = scrolledtext.ScrolledText(root, width=80, height=12, state='disabled')
@@ -105,6 +111,37 @@ class PortfolioApp:
         
         # If validation failed, disable the gen_report button
         self.report_btn.config(state='disabled' if result is None else 'normal')
+    
+    def refresh_current_value(self):
+        """Refresh the current position table from IBKR."""
+        self.current_position = cal_portfolio.fetch_ibkr_portfolio()
+        pos_df = self.current_position.fillna(0)
+        if 'MarketPrice' in pos_df.columns:
+            pos_df = pos_df.drop(columns=['MarketPrice'])
+        # Clear the tree
+        for item in self.position_tree.get_children():
+            self.position_tree.delete(item)
+        # Insert new rows
+        for _, row in pos_df.iterrows():
+            self.position_tree.insert('', 'end', values=list(row))
+        # Optional: show a message
+        self.output_box.config(state='normal')
+        self.output_box.insert(tk.END, "\nCurrent value refreshed.\n")
+        self.output_box.config(state='disabled')
+    
+    def disconnect_ibkr(self):
+        """Disconnect from IBKR."""
+        try:
+            from ib_insync import IB
+            ib = IB()
+            ib.disconnect()
+            self.output_box.config(state='normal')
+            self.output_box.insert(tk.END, "\nDisconnected from IBKR.\n")
+            self.output_box.config(state='disabled')
+        except Exception as e:
+            self.output_box.config(state='normal')
+            self.output_box.insert(tk.END, f"\nError disconnecting from IBKR: {e}\n")
+            self.output_box.config(state='disabled')
 
     def gen_report(self):
         # Collect output via callback and capture print output from gen_report

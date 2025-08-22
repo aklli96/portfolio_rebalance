@@ -42,7 +42,7 @@ def fetch_ibkr_portfolio():
         ib.reqMarketDataType(3)
         ticker_data = ib.reqMktData(pos.contract, snapshot=True)
         ib.sleep(10)  # Give time for price to update
-        market_price = ticker_data.marketPrice() if ticker_data.marketPrice() is not None else 0
+        market_price = ticker_data.marketPrice() if ticker_data.marketPrice() != -1 else ticker_data.close
         data.append({
             'Ticker': pos.contract.symbol,
             'Quantity': pos.position,
@@ -72,24 +72,36 @@ def rabalance_portfolio(config, current_position, output_callback=None):
     dict = {}
     # Merge MarketPrice into config for calculation
     market_info = current_position[['Ticker', 'Quantity', 'AvgCost', 'CurrentValue', 'MarketPrice']]
-
     fetched_portfolio = config.merge(market_info, on='Ticker', how='left')
     fetched_portfolio.fillna(0, inplace=True)
+    tradable_funds = fetched_portfolio[fetched_portfolio['Ticker'] == 'CASH']['CurrentValue'].values[0]
     amount_in_pool = fetched_portfolio['CurrentValue'].sum()
     output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
     for i in range(len(fetched_portfolio['Ratio'])):
-        tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - (fetched_portfolio['AvgCost'][i] * fetched_portfolio['Quantity'][i])
-        market_price = fetched_portfolio['MarketPrice'][i]
-        ticker = fetched_portfolio['Ticker'][i]
-        if tb_changed_amt and abs(tb_changed_amt) > 0:
-            shares_to_trade = abs(tb_changed_amt) / market_price
+        if fetched_portfolio['Ticker'][i] == 'CASH':
+            continue
+        else:
+            tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - (fetched_portfolio['AvgCost'][i] * fetched_portfolio['Quantity'][i])
+            market_price = fetched_portfolio['MarketPrice'][i]
+            ticker = fetched_portfolio['Ticker'][i]
+            shares_to_trade = tb_changed_amt / market_price if tb_changed_amt > 0 else abs(tb_changed_amt) / market_price
             if shares_to_trade < 1:
                 shares_to_trade = 0
+                tradable_funds = tradable_funds
+                action = "to be changed amount is less than the market price, no action required"
+                
             else:
                 shares_to_trade = math.floor(shares_to_trade)
+                action = "Buy" if tb_changed_amt > 0 else "Sell"
+                tradable_funds = tradable_funds + (shares_to_trade * market_price) if action == 'Sell' else tradable_funds
+        dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
+    
+    for ticker in dict:
+        if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy":
+            output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
+            tradable_funds = tradable_funds - (dict[ticker]['shares'] * dict[ticker]['market_price'])
+        elif dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Sell":
+            output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
         else:
-            shares_to_trade = 0
-        action = "Buy" if tb_changed_amt > 0 else "Sell"
-        output(f"{action} {abs(shares_to_trade):.2f} shares of {ticker} (amount: {abs(tb_changed_amt):.2f})")
-        dict[ticker] = {'amount': tb_changed_amt, 'shares': shares_to_trade}
+            output(f"ticker {dict[ticker]['action']}")
     return dict
