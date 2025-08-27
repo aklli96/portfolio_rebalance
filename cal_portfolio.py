@@ -59,7 +59,7 @@ def fetch_ibkr_portfolio():
         'CurrentValue': cash
     })
     df = pd.DataFrame(data)
-    return df
+    return df, ib
 
 def rabalance_portfolio(config, current_position, output_callback=None):
     def default_output(msg):

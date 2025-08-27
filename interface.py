@@ -5,20 +5,22 @@ import gen_report
 import sys
 import pandas as pd
 from io import StringIO
+from cal_portfolio import fetch_ibkr_portfolio
 
 
 class PortfolioApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Portfolio Rebalancer")
-        
+
+
         # Entry popup for editing ratios
         self.edit_popup = None
         self.edit_entry = None
         
         # Load data
         self.config = cal_portfolio.read_config()
-        self.current_position = cal_portfolio.fetch_ibkr_portfolio()
+        self.current_position, self.ib = fetch_ibkr_portfolio()
 
         # Table for positions (convert NaN to 0, hide MarketPrice)
         self.position_label = ttk.Label(root, text="Current Positions")
@@ -114,30 +116,30 @@ class PortfolioApp:
     
     def refresh_current_value(self):
         """Refresh the current position table from IBKR."""
-        self.current_position = cal_portfolio.fetch_ibkr_portfolio()
         pos_df = self.current_position.fillna(0)
         if 'MarketPrice' in pos_df.columns:
             pos_df = pos_df.drop(columns=['MarketPrice'])
-        # Clear the tree
         for item in self.position_tree.get_children():
             self.position_tree.delete(item)
-        # Insert new rows
         for _, row in pos_df.iterrows():
             self.position_tree.insert('', 'end', values=list(row))
-        # Optional: show a message
         self.output_box.config(state='normal')
         self.output_box.insert(tk.END, "\nCurrent value refreshed.\n")
         self.output_box.config(state='disabled')
-    
+
     def disconnect_ibkr(self):
         """Disconnect from IBKR."""
         try:
-            from ib_insync import IB
-            ib = IB()
-            ib.disconnect()
-            self.output_box.config(state='normal')
-            self.output_box.insert(tk.END, "\nDisconnected from IBKR.\n")
-            self.output_box.config(state='disabled')
+            if self.ib is not None:
+                self.ib.disconnect()
+                self.ib = None
+                self.output_box.config(state='normal')
+                self.output_box.insert(tk.END, "\nDisconnected from IBKR.\n")
+                self.output_box.config(state='disabled')
+            else:
+                self.output_box.config(state='normal')
+                self.output_box.insert(tk.END, "\nNo IBKR connection to disconnect.\n")
+                self.output_box.config(state='disabled')
         except Exception as e:
             self.output_box.config(state='normal')
             self.output_box.insert(tk.END, f"\nError disconnecting from IBKR: {e}\n")
