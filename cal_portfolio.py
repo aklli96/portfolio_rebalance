@@ -103,5 +103,5 @@ def rabalance_portfolio(config, current_position, output_callback=None):
         elif dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Sell":
             output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
         else:
-            output(f"ticker {dict[ticker]['action']}")
+            output(f"ticker: {ticker} {dict[ticker]['action']}")
     return dict
