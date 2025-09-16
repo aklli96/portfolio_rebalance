@@ -114,19 +114,37 @@ class PortfolioApp:
         # If validation failed, disable the gen_report button
         self.report_btn.config(state='disabled' if result is None else 'normal')
     
-    def refresh_current_value(self):
-        """Refresh the current position table from IBKR."""
-        pos_df = self.current_position.fillna(0)
-        if 'MarketPrice' in pos_df.columns:
-            pos_df = pos_df.drop(columns=['MarketPrice'])
-        for item in self.position_tree.get_children():
-            self.position_tree.delete(item)
-        for _, row in pos_df.iterrows():
-            self.position_tree.insert('', 'end', values=list(row))
-        self.output_box.config(state='normal')
-        self.output_box.insert(tk.END, "\nCurrent value refreshed.\n")
-        self.output_box.config(state='disabled')
 
+    def refresh_current_value(self):
+        try:
+            # Disconnect existing connection if any
+            if self.ib is not None:
+                self.ib.disconnect()
+            
+            # Fetch fresh data from IBKR
+            self.current_position, self.ib = fetch_ibkr_portfolio()
+            
+            # Update the table
+            pos_df = self.current_position.fillna(0)
+            if 'MarketPrice' in pos_df.columns:
+                pos_df = pos_df.drop(columns=['MarketPrice'])
+            
+            # Clear existing table
+            for item in self.position_tree.get_children():
+                self.position_tree.delete(item)
+            
+            # Repopulate with new data
+            for _, row in pos_df.iterrows():
+                self.position_tree.insert('', 'end', values=list(row))
+            
+            self.output_box.config(state='normal')
+            self.output_box.insert(tk.END, "\nCurrent value refreshed successfully with latest data.\n")
+            self.output_box.config(state='disabled')
+        
+        except Exception as e:
+            self.output_box.config(state='normal')
+            self.output_box.insert(tk.END, f"\nError refreshing data: {str(e)}\n")
+            self.output_box.config(state='disabled')
     def disconnect_ibkr(self):
         """Disconnect from IBKR."""
         try:
