@@ -19,6 +19,9 @@ Install the relevant python packages
 ```bash
 pip install -r requirements.txt
 ```
+Download the following [report template](https://github.com/user-attachments/files/22896820/portfolio_summary.xlsx), and place it into the same directorary as the main.py
+
+
 
 ## How to use this app
 Portfolio rebalancing

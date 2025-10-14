@@ -3,9 +3,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 infra/modules/ec2/variable.tf
+ib_position_rebalancer/
+portfolio_setting.csv
+# Ignore All (xlsx) files
+portfolio_summary.xlsx
+*.csv
 # C extensions
 *.so
-
+*summary
 # Distribution / packaging
 *.tfvars
 *.pem

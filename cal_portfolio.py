@@ -78,11 +78,12 @@ def rabalance_portfolio(config, current_position, output_callback=None):
     amount_in_pool = fetched_portfolio['CurrentValue'].sum()
     output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
     for i in range(len(fetched_portfolio['Ratio'])):
-        if fetched_portfolio['Ticker'][i] == 'CASH':
+        if fetched_portfolio['Ticker'][i] == 'CASH' or fetched_portfolio['Ratio'][i] <= 0:
             continue
         else:
             tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - (fetched_portfolio['AvgCost'][i] * fetched_portfolio['Quantity'][i])
             market_price = fetched_portfolio['MarketPrice'][i]
+            avg_price = fetched_portfolio['AvgCost'][i]
             ticker = fetched_portfolio['Ticker'][i]
             shares_to_trade = tb_changed_amt / market_price if tb_changed_amt > 0 else abs(tb_changed_amt) / market_price
             if shares_to_trade < 1:
@@ -94,7 +95,7 @@ def rabalance_portfolio(config, current_position, output_callback=None):
                 shares_to_trade = math.floor(shares_to_trade)
                 action = "Buy" if tb_changed_amt > 0 else "Sell"
                 tradable_funds = tradable_funds + (shares_to_trade * market_price) if action == 'Sell' else tradable_funds
-        dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
+        dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'avg_price':avg_price, 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
     
     for ticker in dict:
         if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy":
