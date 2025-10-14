@@ -5,7 +5,8 @@ __pycache__/
 infra/modules/ec2/variable.tf
 ib_position_rebalancer/
 portfolio_setting.csv
-*.xlsx
+# Ignore All (xlsx) files
+portfolio_summary.xlsx
 *.csv
 # C extensions
 *.so
