@@ -1,7 +1,7 @@
 # portfolio_rebalance
 Internal project - HF
 
-This is the portfolio rebalancer, ensuring your position is aligning your ratio setting in [config file](https://github.com/aklli96/portfolio_rebalance/blob/main/portfolio_setting.csv)
+This is the portfolio rebalancer, ensuring your position is aligning your ratio setting in [portfolio_setting](https://github.com/user-attachments/files/22904827/portfolio_setting.csv)
 
 
 ## Prerequisite setup
@@ -19,8 +19,19 @@ Install the relevant python packages
 ```bash
 pip install -r requirements.txt
 ```
-Download the following [report template](https://github.com/user-attachments/files/22896820/portfolio_summary.xlsx), and place it into the same directorary as the main.py
+Download the following file and place it into the same directory as the main.py 
 
+1. [portfolio_summary](https://github.com/user-attachments/files/22896820/portfolio_summary.xlsx)
+
+Please directly put the portfolio_summary into the directory of portfolio_rebalance
+
+2. [portfolio_setting](https://github.com/user-attachments/files/22904827/portfolio_setting.csv)
+
+The ticker name refers to IBKR and the ratio is displaying with %, here is the example
+|Ticker|Ratio|
+|:---:|:---:|
+|CASH|5%|
+|QQQ|95%|
 
 
 ## How to use this app
