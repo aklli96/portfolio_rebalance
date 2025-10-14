@@ -1,6 +1,8 @@
-import gen_report, cal_port
+import interface
 
 
 if __name__ == "__main__":
-    config = cal_port.read_config()
-    cal_port.rabalance_portfolio(config)
+    root = interface.tk.Tk()
+    app = interface.PortfolioApp(root)
+    root.mainloop()
+
