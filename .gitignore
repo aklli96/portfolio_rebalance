@@ -4,9 +4,12 @@ __pycache__/
 *$py.class
 infra/modules/ec2/variable.tf
 ib_position_rebalancer/
+portfolio_setting.csv
+*.xlsx
+*.csv
 # C extensions
 *.so
-
+*summary
 # Distribution / packaging
 *.tfvars
 *.pem
