@@ -8,6 +8,7 @@ portfolio_setting.csv
 # Ignore All (xlsx) files
 portfolio_summary.xlsx
 *.csv
+*.xlsx
 # C extensions
 *.so
 *summary

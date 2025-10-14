@@ -1,6 +1,5 @@
 import pandas as pd
 from datetime import datetime
-from cal_portfolio import rabalance_portfolio, read_config, fetch_ibkr_portfolio
 
 def save_rebalance_to_excel(config, filename="portfolio_summary.xlsx"):
     date_str = datetime.now().strftime("%Y-%m-%d")
