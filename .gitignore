@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 infra/modules/ec2/variable.tf
+ib_position_rebalancer/
 # C extensions
 *.so
 

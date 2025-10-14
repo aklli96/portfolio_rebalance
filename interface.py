@@ -182,7 +182,8 @@ class PortfolioApp:
         old_stdout = sys.stdout
         sys.stdout = mystdout
         try:
-            gen_report.save_rebalance_to_excel(result, self.config)
+            gen_report.save_rebalance_to_excel(self.config)
+            gen_report.save_performance_to_excel(result)
         finally:
             sys.stdout = old_stdout
         report_output = mystdout.getvalue()

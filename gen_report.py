@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 from cal_portfolio import rabalance_portfolio, read_config, fetch_ibkr_portfolio
 
-def save_rebalance_to_excel(result_dict, config, filename="portfolio_summary.xlsx"):
+def save_rebalance_to_excel(config, filename="portfolio_summary.xlsx"):
     date_str = datetime.now().strftime("%Y-%m-%d")
     row = {'Rebalance_Date': date_str}
 
@@ -83,3 +83,58 @@ def save_rebalance_to_excel(result_dict, config, filename="portfolio_summary.xls
             else:
                 sheet_df.to_excel(writer, sheet_name=sheet, index=False)
     print(f"Rebalance summary saved to {filename} (sheet: rebalancing_overview)")
+
+def save_performance_to_excel(result_dict, filename="portfolio_summary.xlsx"):
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    columns = ['report_gen_date', 'ticker', 'avg_price', 'market_price', 'performance']
+
+    # Load all sheets
+    try:
+        all_sheets = pd.read_excel(filename, sheet_name=None)
+    except FileNotFoundError:
+        all_sheets = {}
+
+    # Work with the performance sheet
+    df = all_sheets.get("Performance", pd.DataFrame(columns=columns))
+
+    for ticker, data in result_dict.items():
+        avg_price = float(f"{data['avg_price']:.2f}")
+        market_price = float(f"{data['market_price']:.2f}")
+        if avg_price and avg_price != 0:
+            perf = market_price - avg_price
+            perf_pct = (market_price - avg_price) / avg_price
+        else:
+            perf = 0.0
+            perf_pct = 0.0
+        new_row = {
+            'report_gen_date': date_str,
+            'ticker': ticker,
+            'avg_price': avg_price,
+            'market_price': market_price,
+            'performance': f"{perf:.2f} ({perf_pct:+.2%})"
+        }
+
+        # Check if a row for this date and ticker exists
+        mask = (df['report_gen_date'] == date_str) & (df['ticker'] == ticker)
+        if mask.any():
+            # Update the existing row, cast all to str
+            df.loc[mask, columns[2:]] = [
+                avg_price,
+                market_price,
+                str(new_row['performance'])
+            ]
+        else:
+            # Append new row, cast all to str
+            df = pd.concat([df, pd.DataFrame([new_row], columns=columns)], ignore_index=True)
+    
+    # Ensure avg_price and market_price columns are float with 2 decimals
+    df['avg_price'] = df['avg_price'].astype(float).round(2)
+    df['market_price'] = df['market_price'].astype(float).round(2)
+    # Update the sheet in the dict
+    all_sheets["Performance"] = df[columns]
+
+    # Write all sheets back
+    with pd.ExcelWriter(filename, mode="w", engine="openpyxl") as writer:
+        for sheet, sheet_df in all_sheets.items():
+            sheet_df.to_excel(writer, sheet_name=sheet, index=False)
+    print(f"Performance report saved to {filename} (sheet: Performance)")
