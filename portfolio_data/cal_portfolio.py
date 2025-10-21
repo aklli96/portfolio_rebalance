@@ -22,10 +22,13 @@ def validation(config, output_callback=None):
         output("Calculating the gap between the existing amount and adjusted amount")
         return True
 
-def fetch_ibkr_portfolio():
+def ibkr_conn():
     ib = IB()
     # Connect to IB Gateway (default port is 4002, TWS is 7497)
     ib.connect('127.0.0.1', 4002, clientId=1)
+    return ib
+
+def fetch_ibkr_portfolio(ib):
     positions = ib.positions()
     # Get account summary for cash
     account_summary = ib.accountSummary()
@@ -41,7 +44,7 @@ def fetch_ibkr_portfolio():
     for pos in positions:
         ib.reqMarketDataType(3)
         ticker_data = ib.reqMktData(pos.contract, snapshot=True)
-        ib.sleep(10)  # Give time for price to update
+        ib.sleep(5)  # Give time for price to update
         market_price = ticker_data.marketPrice() if ticker_data.marketPrice() != -1 else ticker_data.close
         data.append({
             'Ticker': pos.contract.symbol,
@@ -59,7 +62,7 @@ def fetch_ibkr_portfolio():
         'CurrentValue': cash
     })
     df = pd.DataFrame(data)
-    return df, ib
+    return df
 
 def rabalance_portfolio(config, current_position, output_callback=None):
     def default_output(msg):

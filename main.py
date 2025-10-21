@@ -1,8 +1,7 @@
-import interface
-
+import tkinter as tk
+from interface import PortfolioApp
 
 if __name__ == "__main__":
-    root = interface.tk.Tk()
-    app = interface.PortfolioApp(root)
+    root = tk.Tk()
+    app = PortfolioApp(root)
     root.mainloop()
-
