@@ -56,9 +56,9 @@ def fetch_ibkr_portfolio(ib):
     # Add cash as a row in the DataFrame
     data.append({
         'Ticker': 'CASH',
-        'Quantity': None,
-        'AvgCost': None,
-        'MarketPrice': None,
+        'Quantity': 0,
+        'AvgCost': 0,
+        'MarketPrice': 0,
         'CurrentValue': cash
     })
     df = pd.DataFrame(data)

@@ -68,8 +68,7 @@ class PortfolioApp:
                 self.current_position = fetch_ibkr_portfolio(self.ib)
                 self.ui.refresh_position(self.current_position)
             except Exception as e:
-                self.ui.append_output(f"Failed to fetch latest portfolio before rebalance: {e}\n")
-
+                self.ui.append_output(f"Failed to fetch latest portfolio before rebalance: {e}\n") 
         # run rebalance calculations
         output_lines = []
         def gui_output(msg):

@@ -1,6 +1,9 @@
 from tkinter import ttk, scrolledtext
 import tkinter as tk
 import pandas as pd
+import threading
+import asyncio
+import time
 
 class UIComponents:
     def __init__(self, root):
@@ -25,7 +28,7 @@ class UIComponents:
         self.rebalance_btn.pack(side=tk.LEFT, padx=4)
         self.report_btn = ttk.Button(btn_frame, text="Gen report")
         self.report_btn.pack(side=tk.LEFT, padx=4)
-        self.stop_btn = ttk.Button(btn_frame, text="Stop")
+        self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop_scanning)
         # stop_btn not packed initially
         self.disconnect_btn = ttk.Button(btn_frame, text="Disconnect IBKR")
         self.disconnect_btn.pack(side=tk.LEFT, padx=4)
@@ -34,83 +37,18 @@ class UIComponents:
         self.output_box = scrolledtext.ScrolledText(root, width=90, height=12, state='disabled')
         self.output_box.pack(padx=5, pady=6, fill='both')
 
+        # scanning state (migrated scanner)
+        self._scan_thread = None
+        self._scan_stop_event = threading.Event()
+        self._scan_ib = None
+        self._scan_fetcher = None
+        self._scan_interval = 5.0
+
     # UI helpers
     def refresh_position(self, df):
-        """
-        Accepts:
-         - pandas.DataFrame
-         - tuple (df, cash_value)
-         - dict convertible to DataFrame
-        Ensures CASH row is preserved/added and CurrentValue computed.
-        """
-        cash_from_arg = None
-
-        # Normalize input
-        if df is None:
-            df = pd.DataFrame()
-        elif isinstance(df, tuple) and len(df) >= 2:
-            maybe_df, maybe_cash = df[0], df[1]
-            if isinstance(maybe_df, pd.DataFrame):
-                df = maybe_df.copy()
-                cash_from_arg = maybe_cash
-        elif isinstance(df, dict):
-            try:
-                df = pd.DataFrame(df)
-                # transpose if needed
-                if 'Ticker' not in df.columns and 'Ticker' in df.index:
-                    df = df.reset_index().rename(columns={'index': 'Ticker'})
-            except Exception:
-                df = pd.DataFrame()
-
-        # ensure dataframe copy
-        df = df.copy()
-
-        # If index holds tickers, reset
-        if 'Ticker' not in df.columns and df.index.name in (None, 'Ticker'):
-            try:
-                df = df.reset_index().rename(columns={'index': 'Ticker'})
-            except Exception:
-                pass
-
-        # If a cash value provided separately, ensure CASH row exists
-        if cash_from_arg is not None:
-            try:
-                cash_val = float(cash_from_arg)
-            except Exception:
-                cash_val = 0.0
-            if not ('Ticker' in df.columns and 'CASH' in df['Ticker'].astype(str).values):
-                cash_row = {'Ticker': 'CASH', 'Quantity': 0.0, 'AvgCost': 0.0,
-                            'MarketPrice': 0.0, 'CurrentValue': round(cash_val, 2)}
-                df = pd.concat([df, pd.DataFrame([cash_row])], ignore_index=True)
-
-        # If there's an explicit cash column and no CASH row, add it
-        if 'Ticker' in df.columns and 'CASH' not in df['Ticker'].astype(str).values:
-            for c in ['Cash', 'CashBalance', 'AvailableFunds', 'TotalCash', 'CashValue']:
-                if c in df.columns:
-                    try:
-                        cash_val = float(df[c].sum()) if df[c].dtype.kind in 'fi' else float(df[c].astype(float).sum())
-                        cash_row = {'Ticker': 'CASH', 'Quantity': 0.0, 'AvgCost': 0.0,
-                                    'MarketPrice': 0.0, 'CurrentValue': round(cash_val, 2)}
-                        df = pd.concat([df, pd.DataFrame([cash_row])], ignore_index=True)
-                    except Exception:
-                        pass
-                    break
-
-        # Compute CurrentValue if possible
-        if 'Quantity' in df.columns and 'MarketPrice' in df.columns:
-            try:
-                df['CurrentValue'] = (df['Quantity'].fillna(0).astype(float) *
-                                      df['MarketPrice'].fillna(0).astype(float)).round(2)
-            except Exception:
-                pass
-
-        # Ensure CASH row exists even if no special columns
-        if 'Ticker' in df.columns and 'CASH' not in df['Ticker'].astype(str).values:
-            # try to infer cash from Account columns if present; fallback to nothing
-            pass  # nothing to add if none found
 
         # Prepare display: hide MarketPrice but keep CASH row and CurrentValue
-        display_df = df.fillna('').drop(columns=['MarketPrice'], errors='ignore')
+        display_df = df.fillna(0).drop(columns=['MarketPrice'], errors='ignore')
 
         cols = list(display_df.columns)
         # reconfigure columns if changed
