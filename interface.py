@@ -4,17 +4,28 @@ from UI.ui_components import UIComponents
 from portfolio_data.ratio_manager import RatioManager
 from io import StringIO
 import sys
+import logging
+
+
+# Configure logging to show in cmd
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 class PortfolioApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Portfolio Rebalancer")
-
         # connection & data
-        self.ib = None
-        self.config = None
-        self.current_position = None
-
+        self.ib = ibkr_conn()
+        logging.info("Successfully connected to IBKR")
+        self.config = read_config()
+        logging.info("Portfolio configuration loaded successfully")
+        self.current_position = fetch_ibkr_portfolio(self.ib)
+        logging.info(f"Initial portfolio fetched - {len(self.current_position)} positions")
+        
         # build UI
         self.ui = UIComponents(root)
 
@@ -29,46 +40,33 @@ class PortfolioApp:
 
         # startup
         self._setup_connection_and_load()
+        logging.info("Starting Portfolio Rebalancer application")
+
 
     def _setup_connection_and_load(self):
-        # connect to IB
-        try:
-            self.ib = ibkr_conn()
-        except Exception as e:
-            self.ui.append_output(f"IBKR connection failed: {e}\n")
-            self.ib = None
-
-        # load config
-        try:
-            self.config = read_config()
-        except Exception as e:
-            self.ui.append_output(f"Failed to read config: {e}\n")
-            self.config = None
-
         # fetch initial portfolio (cal_portfolio returns CASH row)
-        if self.ib is not None:
-            try:
-                self.current_position = fetch_ibkr_portfolio(self.ib)
-                self.ui.refresh_position(self.current_position)
-            except Exception as e:
-                self.ui.append_output(f"Failed to fetch initial portfolio: {e}\n")
-                self.current_position = None
-
-        # refresh ratio table
+        self.ui.refresh_position(self.current_position)
+        logging.info(f"Initial portfolio fetched - {len(self.current_position)} positions")
         self.ui.refresh_ratio_table(self.config)
 
     def rebalance(self):
         # fetch latest synchronous snapshot and refresh UI
+        logging.info("Starting portfolio rebalance calculation")
         if self.ib is not None:
             try:
                 self.current_position = fetch_ibkr_portfolio(self.ib)
                 self.ui.refresh_position(self.current_position)
+                logging.info("Latest portfolio fetched for rebalance")
             except Exception as e:
-                self.ui.append_output(f"Failed to fetch latest portfolio before rebalance: {e}\n") 
+                logging.error(f"Failed to fetch latest portfolio: {e}")
+                self.ui.append_output(f"Failed to fetch latest portfolio before rebalance: {e}\n")
+
         # run rebalance calculations
         output_lines = []
         def gui_output(msg):
             output_lines.append(str(msg))
+            logging.info(f"Rebalance calc: {msg}")
+
         result = rabalance_portfolio(self.config, self.current_position, output_callback=gui_output)
         # show outputs in UI
         self.ui.show_output_lines(output_lines)
@@ -78,7 +76,11 @@ class PortfolioApp:
 
         # if rebalance returned a plan, start background scanning (pass IB instance)
         if result is not None:
+            logging.info("Rebalance calculation successful - starting portfolio scanning")
             self.ui.start_scanning(self.ib, fetch_ibkr_portfolio)
+        else:
+            logging.warning("Rebalance calculation failed - check ratio settings")
+
 
     def gen_report(self):
         # run rebalance to get result dict (non-destructive)

@@ -25,8 +25,8 @@ def validation(config, output_callback=None):
 def ibkr_conn():
     ib = IB()
     # Connect to IB Gateway (default port is 4002, TWS is 7497)
-    ib.connect('127.0.0.1', 4002, clientId=1)
-    return ib
+    ib_conn = ib.connect('127.0.0.1', 4002, clientId=1)
+    return ib_conn
 
 def fetch_ibkr_portfolio(ib):
     positions = ib.positions()
