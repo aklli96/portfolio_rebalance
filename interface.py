@@ -1,7 +1,6 @@
 from portfolio_data.cal_portfolio import fetch_ibkr_portfolio, ibkr_conn, read_config, rabalance_portfolio
 from report import gen_report
 from UI.ui_components import UIComponents
-from portfolio_data.scanner import Scanner
 from portfolio_data.ratio_manager import RatioManager
 from io import StringIO
 import sys
