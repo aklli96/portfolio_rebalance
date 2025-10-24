@@ -112,3 +112,47 @@ class UIComponents:
             self.stop_btn.pack_forget()
         except Exception:
             pass
+        
+    def _ensure_event_loop(self):
+        """Ensure an asyncio event loop exists in the background thread"""
+        try:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+        except Exception:
+            pass
+
+    def start_scanning(self, ib, fetcher, interval=5.0):
+        """Start portfolio scanning after Rebalance is clicked"""
+        if self._scan_thread and self._scan_thread.is_alive():
+            return
+        self._scan_ib = ib
+        self._scan_fetcher = fetcher
+        self._scan_interval = interval
+        self._scan_stop_event.clear()
+        self._scan_thread = threading.Thread(target=self._scan_loop, daemon=True)
+        self._scan_thread.start()
+        self.show_stop_button()
+        self.append_output("\nStarted scanning portfolio.\n")
+
+    def stop_scanning(self):
+        """Stop portfolio scanning when Stop button is clicked"""
+        self._scan_stop_event.set()
+        self.hide_stop_button()
+        self.append_output("Stopped scanning.\n")
+
+    def _scan_loop(self):
+        """Background loop that refreshes portfolio data"""
+        self._ensure_event_loop()
+        while not self._scan_stop_event.is_set():
+            try:
+                df = self._scan_fetcher(self._scan_ib)
+                if df is not None:
+                    # Schedule UI update on main thread
+                    self.root.after(0, lambda df=df: self.refresh_position(df))
+                    self.root.after(0, lambda: self.append_output(
+                        "scanning in progress...\nThe latest market price has been refreshed into the UI\n"))
+            except Exception as e:
+                self.root.after(0, lambda e=e: self.append_output(f"Scan error: {e}\n"))
+            
+            # Wait interval or until stopped
+            if self._scan_stop_event.wait(self._scan_interval):
+                break

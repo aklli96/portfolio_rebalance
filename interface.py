@@ -22,13 +22,10 @@ class PortfolioApp:
         # wire ratio manager
         self.ratio_mgr = RatioManager(self.ui, on_config_saved=self._reload_config)
 
-        # scanner (background) - fetcher expects (ib) argument
-        self.scanner = Scanner(self.ui, fetcher=fetch_ibkr_portfolio)
-
         # button wiring
         self.ui.rebalance_btn.config(command=self.rebalance)
         self.ui.report_btn.config(command=self.gen_report)
-        self.ui.stop_btn.config(command=self.scanner.stop)
+        self.ui.stop_btn.config(command=self.ui.stop_scanning)
         self.ui.disconnect_btn.config(command=self.disconnect_ibkr)
 
         # startup
@@ -81,8 +78,8 @@ class PortfolioApp:
         self.ui.report_btn.config(state='normal' if result is not None else 'disabled')
 
         # if rebalance returned a plan, start background scanning (pass IB instance)
-        if result is not None and self.ib is not None:
-            self.scanner.start(self.ib)
+        if result is not None:
+            self.ui.start_scanning(self.ib, fetch_ibkr_portfolio)
 
     def gen_report(self):
         # run rebalance to get result dict (non-destructive)
@@ -111,8 +108,7 @@ class PortfolioApp:
         self.ui.append_output(output + '\n')
 
     def disconnect_ibkr(self):
-        # stop scanner first
-        self.scanner.stop()
+        self.ui.stop_scanning()  # Add this line to stop scanning when disconnecting
         if self.ib is not None:
             try:
                 self.ib.disconnect()
