@@ -1,6 +1,7 @@
 import pandas as pd
 from ib_insync import IB
 import math
+from datetime import timedelta
 
 def read_config():
     config = pd.read_csv('portfolio_setting.csv')
@@ -53,7 +54,7 @@ def fetch_ibkr_portfolio(ib):
         elif hasattr(ticker_data, 'lastTime'):
             timestamp = ticker_data.lastTime
         if timestamp and (last_timestamp is None or timestamp > last_timestamp):
-            last_timestamp = timestamp                    
+            last_timestamp = timestamp + timedelta(hours=8)                   
         data.append({
             'Ticker': pos.contract.symbol,
             'Quantity': pos.position,

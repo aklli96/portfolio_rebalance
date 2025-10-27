@@ -42,12 +42,36 @@ class PortfolioApp:
         self._setup_connection_and_load()
         logging.info("Starting Portfolio Rebalancer application")
 
+        #setup the scanner
+        self.is_scanning = False
+        self.refresh_interval = 5000  # 5 seconds
 
     def _setup_connection_and_load(self):
         # fetch initial portfolio (cal_portfolio returns CASH row)
         self.ui.refresh_position(self.current_position)
         logging.info(f"Initial portfolio fetched - {len(self.current_position)} positions")
         self.ui.refresh_ratio_table(self.config)
+
+    def start_scanning(self):
+        """Start periodic refresh of current positions"""
+        self.is_scanning = True
+        self.refresh_current_positions()
+
+    
+    def refresh_current_positions(self):
+        """Refresh current positions and schedule next update if scanning"""
+        if not self.is_scanning:
+            return
+            
+        try:
+            self.current_position = fetch_ibkr_portfolio(self.ib)
+            self.ui.refresh_position(self.current_position)
+            self.ui.append_output("\nPositions updated successfully")
+        except Exception as e:
+            self.ui.append_output(f"\nError refreshing positions: {str(e)}")
+        
+        if self.is_scanning:
+            self.root.after(self.refresh_interval, self.refresh_current_positions)
 
     def rebalance(self):
         # fetch latest synchronous snapshot and refresh UI
@@ -59,7 +83,7 @@ class PortfolioApp:
             except Exception as e:
                 logging.error(f"Failed to fetch latest portfolio: {e}")
                 self.ui.append_output(f"Failed to fetch latest portfolio before rebalance: {e}\n")
-
+                return
         # run rebalance calculations
         output_lines = []
         def gui_output(msg):
@@ -67,16 +91,17 @@ class PortfolioApp:
             logging.info(f"Rebalance calc: {msg}")
 
         result = rabalance_portfolio(self.config, self.current_position, output_callback=gui_output)
+        
         # show outputs in UI
         self.ui.show_output_lines(output_lines)
 
         # enable/disable report button
         self.ui.report_btn.config(state='normal' if result is not None else 'disabled')
 
-        # if rebalance returned a plan, start background scanning (pass IB instance)
+        # if rebalance returned a plan, start background scanning
         if result is not None:
-            logging.info("Rebalance calculation successful - starting portfolio scanning")
-            self.ui.start_scanning(self.ib, fetch_ibkr_portfolio)
+            self.start_scanning()  # Start scanning after successful rebalance
+            logging.info("Started position scanning")
         else:
             logging.warning("Rebalance calculation failed - check ratio settings")
 
@@ -126,3 +151,4 @@ class PortfolioApp:
             self.ui.append_output("Portfolio ratios saved and reloaded.\n")
         except Exception as e:
             self.ui.append_output(f"Failed to reload config: {e}\n")
+    

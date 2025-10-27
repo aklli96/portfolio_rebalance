@@ -28,11 +28,10 @@ class UIComponents:
         self.rebalance_btn.pack(side=tk.LEFT, padx=4)
         self.report_btn = ttk.Button(btn_frame, text="Gen report")
         self.report_btn.pack(side=tk.LEFT, padx=4)
-        self.stop_btn = ttk.Button(btn_frame, text="Stop", command=self.stop_scanning)
+        self.stop_btn = ttk.Button(btn_frame, text="Stop Scanning", state='disabled')
         # stop_btn not packed initially
         self.disconnect_btn = ttk.Button(btn_frame, text="Disconnect IBKR")
         self.disconnect_btn.pack(side=tk.LEFT, padx=4)
-
         # output
         self.output_box = scrolledtext.ScrolledText(root, width=90, height=12, state='disabled')
         self.output_box.pack(padx=5, pady=6, fill='both')
@@ -46,26 +45,26 @@ class UIComponents:
 
     # UI helpers
     def refresh_position(self, df):
-
-        # Prepare display: hide MarketPrice but keep CASH row and CurrentValue
-        display_df = df.fillna(0).drop(columns=['MarketPrice'], errors='ignore')
-
-        cols = list(display_df.columns)
-        # reconfigure columns if changed
+        """Update the position table with new data"""
+        # Clear existing items
+        for item in self.position_tree.get_children():
+            self.position_tree.delete(item)
+        
+        # Insert new data
+        pos_df = df.fillna(0)
+        if 'MarketPrice' in pos_df.columns:
+            pos_df = pos_df.drop(columns=['MarketPrice'])
+        
+        cols = list(pos_df.columns)
         if list(self.position_tree['columns']) != cols:
-            for c in self.position_tree.get_children():
-                self.position_tree.delete(c)
-            self.position_tree.config(columns=cols)
+            self.position_tree['columns'] = cols
             for col in cols:
                 self.position_tree.heading(col, text=col)
                 self.position_tree.column(col, width=120)
-        else:
-            # clear rows
-            for item in self.position_tree.get_children():
-                self.position_tree.delete(item)
-
-        for _, row in display_df.iterrows():
-            values = [("" if pd.isna(v) else v) for v in list(row)]
+            
+        # Insert data rows
+        for _, row in pos_df.iterrows():
+            values = [f"{x:.2f}" if isinstance(x, float) else x for x in row]
             self.position_tree.insert('', 'end', values=values)
 
     def refresh_ratio_table(self, cfg):
@@ -133,12 +132,6 @@ class UIComponents:
         self.show_stop_button()
         self.append_output("\nStarted scanning portfolio.\n")
 
-    def stop_scanning(self):
-        """Stop portfolio scanning when Stop button is clicked"""
-        self._scan_stop_event.set()
-        self.hide_stop_button()
-        self.append_output("Stopped scanning.\n")
-
     def _scan_loop(self):
         """Background loop that refreshes portfolio data"""
         self._ensure_event_loop()
@@ -156,3 +149,14 @@ class UIComponents:
             # Wait interval or until stopped
             if self._scan_stop_event.wait(self._scan_interval):
                 break
+            
+    def stop_scanning(self):
+        """Stop portfolio scanning"""
+        if self._scan_thread and self._scan_thread.is_alive():
+            self._scan_stop_event.set()
+            self._scan_thread.join(timeout=1.0)
+            self._scan_thread = None
+            self._scan_ib = None
+            self._scan_fetcher = None
+            self.hide_stop_button()
+            self.append_output("\nStopped scanning portfolio.\n")
