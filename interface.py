@@ -54,7 +54,6 @@ class PortfolioApp:
         logging.info("Starting portfolio rebalance calculation")
         if self.ib is not None:
             try:
-                self.current_position = fetch_ibkr_portfolio(self.ib)
                 self.ui.refresh_position(self.current_position)
                 logging.info("Latest portfolio fetched for rebalance")
             except Exception as e:
