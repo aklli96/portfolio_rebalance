@@ -148,12 +148,8 @@ class UIComponents:
                 if df is not None:
                     # Schedule UI update on main thread
                     self.root.after(0, lambda df=df: self.refresh_position(df))
-                    
-                    # Get latest timestamp if available
-                    latest_timestamp = df['LastUpdate'].max() if 'LastUpdate' in df.columns else "N/A"
-                    self.root.after(0, lambda ts=latest_timestamp: self.append_output(
-                        f"Scanning in progress...\n"
-                        f"Market prices refreshed - Last Update: {ts}\n"))
+                    self.root.after(0, lambda: self.append_output(
+                        "scanning in progress...\nThe latest market price has been refreshed into the UI\n"))
             except Exception as e:
                 self.root.after(0, lambda e=e: self.append_output(f"Scan error: {e}\n"))
             
