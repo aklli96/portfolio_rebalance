@@ -44,25 +44,28 @@ def fetch_ibkr_portfolio(ib):
     last_timestamp = None
 
     for pos in positions:
-        ib.reqMarketDataType(3)
-        ticker_data = ib.reqMktData(pos.contract, snapshot=True)
-        ib.sleep(5)  # Give time for price to update
-        market_price = ticker_data.marketPrice() if ticker_data.marketPrice() != -1 else ticker_data.close
-        timestamp = None
-        if hasattr(ticker_data, 'time'):
-            timestamp = ticker_data.time
-        elif hasattr(ticker_data, 'lastTime'):
-            timestamp = ticker_data.lastTime
-        if timestamp and (last_timestamp is None or timestamp > last_timestamp):
-            last_timestamp = timestamp + timedelta(hours=8)                   
-        data.append({
-            'Ticker': pos.contract.symbol,
-            'Quantity': pos.position,
-            'AvgCost': pos.avgCost,
-            'MarketPrice': market_price,
-            'CurrentValue': round(pos.position * market_price,2),
-            'LastUpdate': last_timestamp.strftime('%Y-%m-%d %H:%M:%S') if last_timestamp else 'N/A'
-        })
+        if hasattr(pos.contract, 'right') and pos.contract.right in ('P', 'C'):
+            continue
+        else:
+            ib.reqMarketDataType(3)
+            ticker_data = ib.reqMktData(pos.contract, snapshot=True)
+            ib.sleep(5)  # Give time for price to update
+            market_price = ticker_data.marketPrice() if ticker_data.marketPrice() != -1 else ticker_data.close
+            timestamp = None
+            if hasattr(ticker_data, 'time'):
+                timestamp = ticker_data.time
+            elif hasattr(ticker_data, 'lastTime'):
+                timestamp = ticker_data.lastTime
+            if timestamp and (last_timestamp is None or timestamp > last_timestamp):
+                last_timestamp = timestamp + timedelta(hours=8)                   
+            data.append({
+                'Ticker': pos.contract.symbol,
+                'Quantity': pos.position,
+                'AvgCost': pos.avgCost,
+                'MarketPrice': market_price,
+                'CurrentValue': round(pos.position * market_price,2),
+                'LastUpdate': last_timestamp.strftime('%Y-%m-%d %H:%M:%S') if last_timestamp else 'N/A'
+            })
     # Add cash as a row in the DataFrame
     data.append({
         'Ticker': 'CASH',
