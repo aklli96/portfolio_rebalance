@@ -45,12 +45,32 @@ def fetch_ibkr_portfolio(ib):
 
     for pos in positions:
         if hasattr(pos.contract, 'right') and pos.contract.right in ('P', 'C'):
-            continue
+            pos.contract.exchange = 'SMART'
+            bars = ib.reqHistoricalData(
+                pos.contract,
+                endDateTime='', # Empty string for current time
+                durationStr='1 D', # Request 1 day of data
+                barSizeSetting='1 min', # Bar size (e.g., '1 day', '1 hour', '1 min')
+                whatToShow='TRADES', # Data type: 'TRADES', 'MIDPOINT', 'BID', 'ASK', etc.
+                useRTH=True, # Use regular trading hours only
+                formatDate=1 # 1 for yyyyMMdd HH:mm:ss, 2 for epoch time
+            )
+            df = pd.DataFrame(bars)
+            latest_close_price = df['close'].iloc[-1]
+            market_price = latest_close_price * 100
+            data.append({
+                'Ticker': f"{pos.contract.symbol} {pos.contract.right if hasattr(pos.contract, 'right') else ''}",
+                'Quantity': pos.position,
+                'AvgCost': pos.avgCost,
+                'MarketPrice': market_price,
+                'CurrentValue': round(pos.position * market_price,2),
+                'LastUpdate': last_timestamp.strftime('%Y-%m-%d %H:%M:%S') if last_timestamp else 'N/A'
+            })
         else:
             ib.reqMarketDataType(3)
             ticker_data = ib.reqMktData(pos.contract, snapshot=True)
             ib.sleep(5)  # Give time for price to update
-            market_price = ticker_data.marketPrice() if ticker_data.marketPrice() != -1 else ticker_data.close
+            market_price = ticker_data.marketPrice() if ticker_data.marketPrice() > 0 else ticker_data.close
             timestamp = None
             if hasattr(ticker_data, 'time'):
                 timestamp = ticker_data.time
