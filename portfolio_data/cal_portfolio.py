@@ -49,14 +49,13 @@ def fetch_ibkr_portfolio(ib):
             bars = ib.reqHistoricalData(
                 pos.contract,
                 endDateTime="", # Empty string for current time
-                durationStr='100 D', # Request 1 day of data
-                barSizeSetting='1 day', # Bar size (e.g., '1 day', '1 hour', '1 min')
+                durationStr='10 D', # Request 1 day of data
+                barSizeSetting='1 min', # Bar size (e.g., '1 day', '1 hour', '1 min')
                 whatToShow='TRADES', # Data type: 'TRADES', 'MIDPOINT', 'BID', 'ASK', etc.
-                useRTH=False, # Use regular trading hours only
+                useRTH=True, # Use regular trading hours only
                 formatDate=1 # 1 for yyyyMMdd HH:mm:ss, 2 for epoch time
             )
             df = pd.DataFrame(bars)
-            print(df)
             latest_close_price = df['close'].iloc[-1]
             market_price = latest_close_price * 100
             data.append({
