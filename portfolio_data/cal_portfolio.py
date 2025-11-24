@@ -1,7 +1,8 @@
 import pandas as pd
 from ib_insync import IB
 import math
-from datetime import timedelta
+from datetime import timedelta, datetime
+import pytz
 
 def read_config():
     config = pd.read_csv('portfolio_setting.csv')
@@ -49,8 +50,8 @@ def fetch_ibkr_portfolio(ib):
             bars = ib.reqHistoricalData(
                 pos.contract,
                 endDateTime="", # Empty string for current time
-                durationStr='10 D', # Request 1 day of data
-                barSizeSetting='1 min', # Bar size (e.g., '1 day', '1 hour', '1 min')
+                durationStr='30 D', # Request 1 day of data
+                barSizeSetting='1 hour', # Bar size (e.g., '1 day', '1 hour', '1 min')
                 whatToShow='TRADES', # Data type: 'TRADES', 'MIDPOINT', 'BID', 'ASK', etc.
                 useRTH=True, # Use regular trading hours only
                 formatDate=1 # 1 for yyyyMMdd HH:mm:ss, 2 for epoch time
@@ -133,6 +134,7 @@ def rabalance_portfolio(config, current_position, output_callback=None):
                 action = "Buy" if tb_changed_amt > 0 else "Sell"
                 tradable_funds = tradable_funds + (shares_to_trade * market_price) if action == 'Sell' else tradable_funds
         dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'avg_price':avg_price, 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
+        print(dict)
     
     for ticker in dict:
         if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy":
