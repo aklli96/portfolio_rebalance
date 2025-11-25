@@ -123,7 +123,7 @@ def rabalance_portfolio(config, current_position, output_callback=None):
             market_price = fetched_portfolio['MarketPrice'][i]
             avg_price = fetched_portfolio['AvgCost'][i]
             ticker = fetched_portfolio['Ticker'][i]
-            shares_to_trade = tb_changed_amt / market_price if tb_changed_amt > 0 else abs(tb_changed_amt) / market_price
+            shares_to_trade = abs(tb_changed_amt) / market_price
             if shares_to_trade < 1:
                 shares_to_trade = 0
                 tradable_funds = tradable_funds
@@ -134,14 +134,16 @@ def rabalance_portfolio(config, current_position, output_callback=None):
                 action = "Buy" if tb_changed_amt > 0 else "Sell"
                 tradable_funds = tradable_funds + (shares_to_trade * market_price) if action == 'Sell' else tradable_funds
         dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'avg_price':avg_price, 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
-        print(dict)
     
     for ticker in dict:
-        if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy":
-            output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
-            tradable_funds = tradable_funds - (dict[ticker]['shares'] * dict[ticker]['market_price'])
+        if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy" and tradable_funds >= dict[ticker]['market_price']:
+            share = 1
+            while tradable_funds - dict[ticker]['market_price'] >= 0:
+                tradable_funds = tradable_funds - dict[ticker]['market_price']
+                share += 1
+            output(f"{dict[ticker]['action']} {share} shares of {ticker}")
         elif dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Sell":
             output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
         else:
-            output(f"ticker: {ticker} {dict[ticker]['action']}")
+            output(f"{ticker} to be changed amount is less than the market price, no action required")
     return dict
