@@ -101,7 +101,6 @@ def fetch_ibkr_portfolio(ib):
 def rabalance_portfolio(config, current_position, output_callback=None):
     def default_output(msg):
         print(msg)
-
     output = output_callback if output_callback is not None else default_output
 
     if not validation(config, output):
@@ -115,14 +114,14 @@ def rabalance_portfolio(config, current_position, output_callback=None):
     amount_in_pool = fetched_portfolio['CurrentValue'].sum()
     output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
     for i in range(len(fetched_portfolio['Ratio'])):
-        if fetched_portfolio['Ticker'][i] == 'CASH' or fetched_portfolio['Ratio'][i] <= 0:
+        if fetched_portfolio['Ticker'][i] == 'CASH':
             continue
         else:
             tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - (fetched_portfolio['AvgCost'][i] * fetched_portfolio['Quantity'][i])
             market_price = fetched_portfolio['MarketPrice'][i]
             avg_price = fetched_portfolio['AvgCost'][i]
             ticker = fetched_portfolio['Ticker'][i]
-            shares_to_trade = abs(tb_changed_amt) / market_price
+            shares_to_trade = abs(tb_changed_amt) / market_price if (abs(tb_changed_amt) / market_price) < fetched_portfolio['Quantity'][i] else fetched_portfolio['Quantity'][i]
             if shares_to_trade < 1:
                 shares_to_trade = 0
                 tradable_funds = tradable_funds
@@ -133,14 +132,13 @@ def rabalance_portfolio(config, current_position, output_callback=None):
                 action = "Buy" if tb_changed_amt > 0 else "Sell"
                 tradable_funds = tradable_funds + (shares_to_trade * market_price) if action == 'Sell' else tradable_funds
         dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'avg_price':avg_price, 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
-    
     for ticker in dict:
         if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy" and tradable_funds >= dict[ticker]['market_price']:
-            share = 1
-            while tradable_funds - dict[ticker]['market_price'] >= 0:
+            n = 0
+            while n < dict[ticker]['shares'] and tradable_funds >= dict[ticker]['market_price']:
                 tradable_funds = tradable_funds - dict[ticker]['market_price']
-                share += 1
-            output(f"{dict[ticker]['action']} {share} shares of {ticker}")
+                n = n + 1
+            output(f"{dict[ticker]['action']} {n} shares of {ticker}")
         elif dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Sell":
             output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
         else:
