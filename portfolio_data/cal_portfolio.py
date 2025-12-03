@@ -1,8 +1,7 @@
 import pandas as pd
 from ib_insync import IB
 import math
-from datetime import timedelta, datetime
-import pytz
+from datetime import timedelta
 
 def read_config():
     config = pd.read_csv('portfolio_setting.csv')
