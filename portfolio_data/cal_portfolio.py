@@ -114,33 +114,81 @@ def rabalance_portfolio(config, current_position, output_callback=None):
     amount_in_pool = fetched_portfolio['CurrentValue'].sum()
     output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
     for i in range(len(fetched_portfolio['Ratio'])):
-        if fetched_portfolio['Ticker'][i] == 'CASH':
-            continue
+        ticker = fetched_portfolio['Ticker'][i]
+        if ticker == 'CASH':
+            target_cash = amount_in_pool * fetched_portfolio['Ratio'][i]
+            current_cash = fetched_portfolio['CurrentValue'][i]
+            tb_changed_amt = target_cash - current_cash
+            dict[ticker] = {
+                'tb_changed': abs(tb_changed_amt), 
+                'avg_price': 1, 
+                'market_price': 1, 
+                'shares': abs(tb_changed_amt), 
+                'action': 'Increase' if tb_changed_amt > 0 else 'Decrease'
+            }
         else:
-            tb_changed_amt = (amount_in_pool * fetched_portfolio['Ratio'][i]) - (fetched_portfolio['AvgCost'][i] * fetched_portfolio['Quantity'][i])
+            target_value = amount_in_pool * fetched_portfolio['Ratio'][i]
+            current_value = fetched_portfolio['CurrentValue'][i]
+            tb_changed_amt = target_value - current_value
             market_price = fetched_portfolio['MarketPrice'][i]
             avg_price = fetched_portfolio['AvgCost'][i]
-            ticker = fetched_portfolio['Ticker'][i]
-            shares_to_trade = abs(tb_changed_amt) / market_price if (abs(tb_changed_amt) / market_price) < fetched_portfolio['Quantity'][i] else fetched_portfolio['Quantity'][i]
+            current_quantity = fetched_portfolio['Quantity'][i]
+            
+            # Calculate shares to trade
+            shares_to_trade = abs(tb_changed_amt) / market_price
+            
+            # For selling, can't sell more than we have
+            if tb_changed_amt < 0 and shares_to_trade > current_quantity:
+                shares_to_trade = current_quantity
+            
             if shares_to_trade < 1:
                 shares_to_trade = 0
-                tradable_funds = tradable_funds
                 action = "to be changed amount is less than the market price, no action required"
-                
             else:
                 shares_to_trade = math.floor(shares_to_trade)
                 action = "Buy" if tb_changed_amt > 0 else "Sell"
-                tradable_funds = tradable_funds + (shares_to_trade * market_price) if action == 'Sell' else tradable_funds
-        dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'avg_price':avg_price, 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
+                if action == 'Sell':
+                    tradable_funds = tradable_funds + (shares_to_trade * market_price)
+                    
+            dict[ticker] = {'tb_changed': abs(tb_changed_amt), 'avg_price':avg_price, 'market_price': market_price, 'shares': shares_to_trade, 'action': action}
+    
+    # Phase 1: Process all SELL orders first to accumulate cash
     for ticker in dict:
-        if dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy" and tradable_funds >= dict[ticker]['market_price']:
-            n = 0
-            while n < dict[ticker]['shares'] and tradable_funds >= dict[ticker]['market_price']:
-                tradable_funds = tradable_funds - dict[ticker]['market_price']
-                n = n + 1
-            output(f"{dict[ticker]['action']} {n} shares of {ticker}")
-        elif dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Sell":
-            output(f"{dict[ticker]['action']} {dict[ticker]['shares']} shares of {ticker}")
-        else:
-            output(f"{ticker} to be changed amount is less than the market price, no action required")
+        if ticker != 'CASH' and dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Sell":
+            tradable_funds = tradable_funds + (dict[ticker]['shares'] * dict[ticker]['market_price'])
+            output(f"Sell {dict[ticker]['shares']} shares of {ticker} to free up ${dict[ticker]['shares'] * dict[ticker]['market_price']:.2f}")
+    
+    # Phase 2: Check CASH target and reserve needed cash
+    target_cash = amount_in_pool * fetched_portfolio[fetched_portfolio['Ticker'] == 'CASH']['Ratio'].values[0]
+    current_cash = fetched_portfolio[fetched_portfolio['Ticker'] == 'CASH']['CurrentValue'].values[0]
+    
+    if 'CASH' in dict:
+        cash_needed = target_cash - current_cash
+        if cash_needed > 0:
+            output(f"Reserve ${cash_needed:.2f} in CASH to meet {fetched_portfolio[fetched_portfolio['Ticker'] == 'CASH']['Ratio'].values[0]:.2%} target")
+            tradable_funds = tradable_funds - cash_needed
+        elif cash_needed < 0:
+            output(f"Release ${abs(cash_needed):.2f} from CASH (exceeds {fetched_portfolio[fetched_portfolio['Ticker'] == 'CASH']['Ratio'].values[0]:.2%} target)")
+            tradable_funds = tradable_funds - cash_needed  # cash_needed is negative, so this adds to tradable_funds
+    
+    # Phase 3: Process BUY orders with remaining funds
+    for ticker in dict:
+        if ticker != 'CASH' and dict[ticker]['shares'] > 0 and dict[ticker]['action'] == "Buy":
+            if tradable_funds >= dict[ticker]['market_price']:
+                n = 0
+                while n < dict[ticker]['shares'] and tradable_funds >= dict[ticker]['market_price']:
+                    tradable_funds = tradable_funds - dict[ticker]['market_price']
+                    n = n + 1
+                if n > 0:
+                    output(f"Buy {n} shares of {ticker} for ${n * dict[ticker]['market_price']:.2f}")
+                if n < dict[ticker]['shares']:
+                    output(f"Warning: Insufficient funds to buy all {dict[ticker]['shares']} shares of {ticker}, only bought {n} shares")
+            else:
+                output(f"Warning: Insufficient funds to buy {ticker}, ${tradable_funds:.2f} available but ${dict[ticker]['market_price']:.2f} needed per share")
+        elif ticker != 'CASH' and dict[ticker]['shares'] == 0:
+            output(f"{ticker} - no action required (change amount less than market price)")
+    
+    if tradable_funds > 0:
+        output(f"Remaining available funds: ${tradable_funds:.2f}")
+    
     return dict
