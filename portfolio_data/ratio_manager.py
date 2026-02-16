@@ -2,18 +2,21 @@ import tkinter as tk
 from tkinter import ttk
 import pandas as pd
 
+
+def _parse_ratio(ratio_str):
+    """Parse a ratio string like '12.500%' into a float (0.125)."""
+    try:
+        return float(str(ratio_str).rstrip('%')) / 100
+    except (ValueError, TypeError):
+        return 0.0
+
+
 class RatioManager:
     def __init__(self, ui, on_config_saved=None):
-        """
-        ui: UIComponents instance exposing ratio_tree and append_output, refresh_ratio_table
-        on_config_saved: optional callback to reload config in main app
-        """
         self.ui = ui
         self.on_config_saved = on_config_saved
         self.edit_popup = None
         self.edit_entry = None
-
-        # bind events
         self.ui.ratio_tree.bind('<Double-1>', self._on_edit)
 
     def _on_edit(self, event):
@@ -21,12 +24,14 @@ class RatioManager:
         column = self.ui.ratio_tree.identify_column(event.x)
         if column != '#2' or not item:
             return
+
         current_value = self.ui.ratio_tree.item(item)['values'][1]
         x, y, w, h = self.ui.ratio_tree.bbox(item, column)
         self.cancel_edit()
+
         self.edit_popup = ttk.Frame(self.ui.ratio_tree)
         self.edit_entry = ttk.Entry(self.edit_popup, width=15)
-        self.edit_entry.insert(0, current_value.rstrip('%'))
+        self.edit_entry.insert(0, str(current_value).rstrip('%'))
         self.edit_entry.select_range(0, tk.END)
         self.edit_entry.focus()
         self.edit_entry.bind('<Return>', lambda e: self.save_edit(item))
@@ -52,28 +57,25 @@ class RatioManager:
             self.edit_popup = None
             self.edit_entry = None
 
-    def validate_ratios(self):
-        total = 0.0
+    def _get_all_ratios(self):
+        """Collect (ticker, ratio_float) pairs from the ratio tree."""
+        items = []
         for item in self.ui.ratio_tree.get_children():
-            ratio_str = self.ui.ratio_tree.item(item)['values'][1]
-            try:
-                ratio = float(ratio_str.rstrip('%')) / 100
-            except Exception:
-                ratio = 0.0
-            total += ratio
+            values = self.ui.ratio_tree.item(item)['values']
+            items.append((values[0], _parse_ratio(values[1])))
+        return items
+
+    def validate_ratios(self):
+        ratios = self._get_all_ratios()
+        total = sum(r for _, r in ratios)
         if abs(total - 1.0) > 0.001:
             self.ui.append_output(f"Warning: Ratios sum to {total:.3%}, should be 100%\n")
             return False
         return True
 
     def save_ratios(self):
-        new_ratios = []
-        for item in self.ui.ratio_tree.get_children():
-            values = self.ui.ratio_tree.item(item)['values']
-            ticker = values[0]
-            ratio = float(values[1].rstrip('%')) / 100
-            new_ratios.append({'Ticker': ticker, 'Ratio': ratio})
-        new_df = pd.DataFrame(new_ratios)
+        ratios = self._get_all_ratios()
+        new_df = pd.DataFrame(ratios, columns=['Ticker', 'Ratio'])
         new_df['Ratio'] = new_df['Ratio'].apply(lambda x: f"{x:.2%}")
         new_df.to_csv('portfolio_setting.csv', index=False)
         if self.on_config_saved:
