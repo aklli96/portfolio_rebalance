@@ -1,7 +1,7 @@
 import pandas as pd
 from ib_insync import IB
 import math
-from datetime import timedelta
+from datetime import datetime
 
 
 def _resolve_output(output_callback):
@@ -33,31 +33,50 @@ def ibkr_conn():
     return ib
 
 
+def _get_best_price(ticker_data):
+    """Extract the best available price from ticker data."""
+    price = ticker_data.marketPrice()
+    if price <= 0:
+        price = ticker_data.last
+    if price <= 0:
+        price = ticker_data.close
+    if price <= 0 and ticker_data.bid > 0 and ticker_data.ask > 0:
+        price = (ticker_data.bid + ticker_data.ask) / 2
+    return price if price > 0 else None
+
+
 def _fetch_option_price(ib, contract):
-    """Fetch latest price for an option contract via historical data."""
-    contract.exchange = 'SMART'
-    bars = ib.reqHistoricalData(
-        contract,
-        endDateTime="",
-        durationStr='30 D',
-        barSizeSetting='1 hour',
-        whatToShow='TRADES',
-        useRTH=True,
-        formatDate=1
-    )
-    df = pd.DataFrame(bars)
-    return df['close'].iloc[-1] * 100
+    """Fetch latest price for an option contract via market data."""
+    try:
+        contract.exchange = 'SMART'
+        ib.reqMarketDataType(3)
+        ticker_data = ib.reqMktData(contract, snapshot=True)
+        ib.sleep(3)
+        
+        price = _get_best_price(ticker_data)
+        timestamp = datetime.now() if price else None
+        
+        # Options are quoted per share but represent 100 shares
+        return (price * 100, timestamp) if price else (None, None)
+    except Exception as e:
+        print(f"Warning: Could not fetch option price for {contract.localSymbol}: {e}")
+        return None, None
 
 
 def _fetch_stock_price(ib, contract):
     """Fetch latest price for a stock/ETF contract via snapshot market data."""
-    ib.reqMarketDataType(3)
-    ticker_data = ib.reqMktData(contract, snapshot=True)
-    ib.sleep(5)
-    price = ticker_data.marketPrice()
-    market_price = price if price > 0 else ticker_data.close
-    timestamp = getattr(ticker_data, 'time', None) or getattr(ticker_data, 'lastTime', None)
-    return market_price, timestamp
+    try:
+        ib.reqMarketDataType(3)
+        ticker_data = ib.reqMktData(contract, snapshot=True)
+        ib.sleep(2)
+        
+        price = _get_best_price(ticker_data)
+        timestamp = datetime.now() if price else None
+        
+        return price, timestamp
+    except Exception as e:
+        print(f"Warning: Could not fetch stock price for {contract.symbol}: {e}")
+        return None, None
 
 
 def fetch_ibkr_portfolio(ib):
@@ -75,31 +94,47 @@ def fetch_ibkr_portfolio(ib):
     for pos in positions:
         contract = pos.contract
         is_option = getattr(contract, 'right', '') in ('P', 'C')
+        symbol_name = contract.localSymbol if is_option else contract.symbol
+        
+        print(f"Fetching price for {symbol_name}...")
 
+        # Fetch price based on contract type
         if is_option:
-            market_price = _fetch_option_price(ib, contract)
+            market_price, timestamp = _fetch_option_price(ib, contract)
             ticker = f"{contract.symbol} {contract.right}"
         else:
             market_price, timestamp = _fetch_stock_price(ib, contract)
             ticker = contract.symbol
-            if timestamp and (last_timestamp is None or timestamp > last_timestamp):
-                last_timestamp = timestamp + timedelta(hours=8)
+        
+        # Fall back to average cost if market price unavailable
+        if not market_price or market_price <= 0:
+            market_price = pos.avgCost
+            print(f"Using avgCost for {symbol_name}: ${market_price}")
+        else:
+            print(f"✓ Got price for {symbol_name}: ${market_price}")
+        
+        # Track most recent timestamp and format position timestamp
+        if timestamp:
+            if not last_timestamp or timestamp > last_timestamp:
+                last_timestamp = timestamp
+            position_update = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            position_update = 'N/A'
 
-        last_update = last_timestamp.strftime('%Y-%m-%d %H:%M:%S') if last_timestamp else 'N/A'
         data.append({
             'Ticker': ticker,
             'Quantity': pos.position,
             'AvgCost': pos.avgCost,
             'MarketPrice': market_price,
             'CurrentValue': round(pos.position * market_price, 2),
-            'LastUpdate': last_update
+            'LastUpdate': position_update
         })
 
     # Add cash row
-    last_update = last_timestamp.strftime('%Y-%m-%d %H:%M:%S') if last_timestamp else 'N/A'
+    cash_update = last_timestamp.strftime('%Y-%m-%d %H:%M:%S') if last_timestamp else 'N/A'
     data.append({
         'Ticker': 'CASH', 'Quantity': 0, 'AvgCost': 0,
-        'MarketPrice': 0, 'CurrentValue': cash, 'LastUpdate': last_update
+        'MarketPrice': 0, 'CurrentValue': cash, 'LastUpdate': cash_update
     })
 
     return pd.DataFrame(data)
@@ -201,3 +236,89 @@ def rabalance_portfolio(config, current_position, output_callback=None):
         output(f"Remaining available funds: ${tradable_funds:.2f}")
 
     return trade_plan
+
+
+def calculate_withdrawal(config, current_position, withdraw_amount, output_callback=None):
+    """Calculate shares to sell from each ticker to withdraw a given amount while maintaining target ratios."""
+    output = _resolve_output(output_callback)
+
+    if not validation(config, output):
+        return None
+
+    if withdraw_amount <= 0:
+        output("Withdrawal amount must be greater than zero.")
+        return None
+
+    market_info = current_position[['Ticker', 'Quantity', 'AvgCost', 'CurrentValue', 'MarketPrice']]
+    portfolio = config.merge(market_info, on='Ticker', how='left').fillna(0)
+
+    total_value = portfolio['CurrentValue'].sum()
+    if withdraw_amount > total_value:
+        output(f"Withdrawal amount ${withdraw_amount:,.2f} exceeds total portfolio value ${total_value:,.2f}")
+        return None
+
+    remaining_value = total_value - withdraw_amount
+    output(f"Current portfolio value: ${total_value:,.2f}")
+    output(f"Withdrawal amount: ${withdraw_amount:,.2f}")
+    output(f"Target portfolio value after withdrawal: ${remaining_value:,.2f}")
+    output("")
+    output("To withdraw while maintaining your target ratios, sell the following:")
+    output("=" * 60)
+
+    withdrawal_plan = {}
+    total_to_sell = 0.0
+
+    for _, row in portfolio.iterrows():
+        ticker = row['Ticker']
+        target_value_after = remaining_value * row['Ratio']
+        current_value = row['CurrentValue']
+        sell_value = current_value - target_value_after
+
+        if ticker == 'CASH':
+            cash_to_withdraw = max(sell_value, 0)
+            withdrawal_plan[ticker] = {
+                'current_value': current_value,
+                'target_value': target_value_after,
+                'sell_value': cash_to_withdraw,
+                'shares': 0,
+                'market_price': 1,
+                'action': 'Withdraw' if cash_to_withdraw > 0 else 'No action'
+            }
+            if cash_to_withdraw > 0:
+                output(f"CASH: Withdraw ${cash_to_withdraw:,.2f} (keep ${target_value_after:,.2f})")
+                total_to_sell += cash_to_withdraw
+            continue
+
+        market_price = row['MarketPrice']
+        if sell_value > 0 and market_price > 0:
+            shares = math.floor(sell_value / market_price)
+            shares = min(shares, int(row['Quantity']))
+            actual_sell = shares * market_price
+        else:
+            shares = 0
+            actual_sell = 0
+
+        withdrawal_plan[ticker] = {
+            'current_value': current_value,
+            'target_value': target_value_after,
+            'sell_value': actual_sell,
+            'shares': shares,
+            'market_price': market_price,
+            'action': 'Sell' if shares > 0 else 'No action'
+        }
+
+        if shares > 0:
+            output(f"{ticker}: Sell {shares} shares @ ${market_price:,.2f} = ${actual_sell:,.2f}")
+            total_to_sell += actual_sell
+        else:
+            output(f"{ticker}: No action (current ${current_value:,.2f} <= target ${target_value_after:,.2f})")
+
+    output("")
+    output("=" * 60)
+    output(f"Total proceeds from sales: ${total_to_sell:,.2f}")
+    shortfall = withdraw_amount - total_to_sell
+    if shortfall > 0.01:
+        output(f"Note: ${shortfall:,.2f} shortfall due to rounding to whole shares.")
+    output(f"Actual withdrawable amount: ${total_to_sell:,.2f}")
+
+    return withdrawal_plan
