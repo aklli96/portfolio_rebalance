@@ -132,6 +132,10 @@ class UIComponents:
         self.stop_btn.pack(side='left', padx=6)
         self.stop_btn.pack_forget()           # hidden until scanning starts
 
+        self.place_orders_btn = ttk.Button(btn_row, text='Place Orders',
+                                              style='Success.TButton')
+        self.place_orders_btn.pack(side='left', padx=6)
+
         self.withdraw_btn = ttk.Button(btn_row, text='Withdraw Money',
                                        style='Warning.TButton')
         self.withdraw_btn.pack(side='left', padx=6)

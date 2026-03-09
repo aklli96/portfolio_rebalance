@@ -6,6 +6,7 @@ import tkinter as tk
 from io import StringIO
 
 from portfolio_data.cal_portfolio import fetch_ibkr_portfolio, ibkr_conn, read_config, rabalance_portfolio, calculate_withdrawal
+from portfolio_data.order_executor import place_rebalance_orders
 from report import gen_report
 from UI.ui_components import UIComponents
 from portfolio_data.ratio_manager import RatioManager
@@ -42,6 +43,7 @@ class PortfolioApp:
         self.ui.scan_btn.config(command=self.start_scanning)
         self.ui.report_btn.config(command=self.gen_report)
         self.ui.stop_btn.config(command=self.stop_scanning)
+        self.ui.place_orders_btn.config(command=self.place_orders)
         self.ui.withdraw_btn.config(command=self.withdraw_money)
         self.ui.disconnect_btn.config(command=self.disconnect_ibkr)
     
@@ -211,6 +213,116 @@ class PortfolioApp:
 
         result = calculate_withdrawal(self.config, self.current_position, amount, output_callback=gui_output)
         self.ui.show_output_lines(output_lines)
+
+    # ── Place orders ────────────────────────────────────
+
+    def place_orders(self):
+        """Show a confirmation dialog with the rebalance trade plan, then place orders."""
+        if self._last_rebalance_result is None:
+            self.ui.append_output("\nPlease run Rebalance first before placing orders.\n")
+            return
+
+        trade_plan = self._last_rebalance_result
+
+        # Build a human-readable summary of pending orders
+        buy_lines = []
+        sell_lines = []
+        for ticker, info in trade_plan.items():
+            if ticker == 'CASH':
+                continue
+            shares = int(info.get('shares', 0))
+            action = info.get('action', '')
+            price  = info.get('market_price', 0)
+            if shares <= 0 or action not in ('Buy', 'Sell'):
+                continue
+            if action == 'Buy':
+                buy_lines.append(f"  BUY  {shares:>5}  {ticker:<8}  LIMIT @ ${price:,.2f}  [DAY]")
+            else:
+                sell_lines.append(f"  SELL {shares:>5}  {ticker:<8}  MARKET  [DAY]")
+
+        if not buy_lines and not sell_lines:
+            self.ui.append_output("\nNo actionable orders in the current rebalance plan.\n")
+            return
+
+        summary_parts = []
+        if sell_lines:
+            summary_parts.append("── Sell (Market) ─────────────────")
+            summary_parts.extend(sell_lines)
+        if buy_lines:
+            summary_parts.append("── Buy (Limit) ──────────────────")
+            summary_parts.extend(buy_lines)
+        summary_text = "\n".join(summary_parts)
+
+        # ── Confirmation dialog ──
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Confirm Orders")
+        dialog.geometry("520x420")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        bg, fg = '#1a1b2e', '#e2e4f0'
+        accent, border = '#6366f1', '#2d2e4a'
+        danger = '#ef4444'
+        dialog.configure(bg=bg)
+
+        # Centre on parent
+        dialog.update_idletasks()
+        px = self.root.winfo_x() + (self.root.winfo_width()  - 520) // 2
+        py = self.root.winfo_y() + (self.root.winfo_height() - 420) // 2
+        dialog.geometry(f"+{px}+{py}")
+
+        tk.Label(dialog, text="⚠  Confirm Order Placement",
+                 font=('Segoe UI', 14, 'bold'), bg=bg, fg='#f59e0b').pack(pady=(18, 4))
+        tk.Label(dialog, text="The following DAY orders will be sent to IBKR:",
+                 font=('Segoe UI', 10), bg=bg, fg='#7a7d9c').pack(pady=(0, 2))
+        tk.Label(dialog, text="(Valid until the next market close only — will NOT carry forward)",
+                 font=('Segoe UI', 8), bg=bg, fg='#7a7d9c').pack(pady=(0, 8))
+
+        order_box = tk.Text(dialog, wrap='word', height=12,
+                            bg='#13141f', fg=fg, font=('Consolas', 9),
+                            bd=0, padx=10, pady=8, state='normal',
+                            selectbackground=accent, selectforeground='#ffffff')
+        order_box.insert('1.0', summary_text)
+        order_box.config(state='disabled')
+        order_box.pack(fill='x', padx=24, pady=(0, 6))
+
+        tk.Label(dialog, text="Are you sure you want to place these orders?",
+                 font=('Segoe UI', 10, 'bold'), bg=bg, fg=fg).pack(pady=(4, 10))
+
+        confirmed = {'value': False}
+
+        def on_confirm():
+            confirmed['value'] = True
+            dialog.destroy()
+
+        btn_frame = tk.Frame(dialog, bg=bg)
+        btn_frame.pack(pady=6)
+        tk.Button(btn_frame, text="Cancel", font=('Segoe UI', 9, 'bold'),
+                  bg=border, fg=fg, bd=0, padx=22, pady=6, cursor='hand2',
+                  activebackground='#3a3a50', activeforeground=fg,
+                  command=dialog.destroy).pack(side='left', padx=10)
+        tk.Button(btn_frame, text="Place Orders", font=('Segoe UI', 9, 'bold'),
+                  bg=danger, fg='#ffffff', bd=0, padx=22, pady=6, cursor='hand2',
+                  activebackground='#dc2626', activeforeground='#ffffff',
+                  command=on_confirm).pack(side='left', padx=10)
+
+        dialog.wait_window()
+
+        if not confirmed['value']:
+            self.ui.append_output("\nOrder placement cancelled by user.\n")
+            return
+
+        # Run on the main thread — ib_insync is not thread-safe.
+        # placeOrder / qualifyContracts are fast (just send messages to TWS).
+        self.ui.append_output("\nPlacing orders...\n")
+        try:
+            place_rebalance_orders(
+                self.ib, trade_plan,
+                output_callback=lambda msg: self.ui.append_output(msg + "\n")
+            )
+        except Exception as exc:
+            self.ui.append_output(f"Error placing orders: {exc}\n")
 
     def disconnect_ibkr(self):
         self.stop_scanning()
