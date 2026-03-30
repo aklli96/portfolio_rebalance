@@ -8,7 +8,11 @@ This is the portfolio rebalancer, ensuring your position is aligning your ratio 
 
 Download and Install [IB gateway](https://www.interactivebrokers.com.hk/en/trading/ibgateway-latest.php)
 
-Make the API enabled by reading the [TWS API Documentation](https://www.interactivebrokers.com/campus/ibkr-api-page/twsapi-doc/#api-introduction), please refer the section of TWS Settings
+Make the API enabled by reading the [TWS API Documentation](https://www.interactivebrokers.com/campus/ibkr-api-page/twsapi-doc/#api-introduction), please refer the section "TWS Configuration For API Use" under TWS Settings
+
+1. Disable “Read-Only API”
+2. Change the "Socket Port" value to **4002**
+
 
 Create the virtual envirnoment for this application
 ```bash
