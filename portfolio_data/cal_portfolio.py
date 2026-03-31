@@ -45,6 +45,35 @@ def _get_best_price(ticker_data):
     return price if price > 0 else None
 
 
+def _fetch_delayed_price(ib, contract):
+    """Fetch delayed/last/previous close price as a fallback."""
+    try:
+        # Request delayed market data (type 3 = delayed-frozen, type 4 = delayed)
+        ib.reqMarketDataType(4)
+        ticker_data = ib.reqMktData(contract)
+        ib.sleep(5)
+
+        # Try delayed prices
+        for attr in ('last', 'close', 'delayedLast', 'delayedClose'):
+            price = getattr(ticker_data, attr, 0)
+            if price and price > 0:
+                ib.cancelMktData(contract)
+                return price
+
+        # Try bid/ask midpoint from delayed data
+        bid = getattr(ticker_data, 'delayedBid', 0) or getattr(ticker_data, 'bid', 0)
+        ask = getattr(ticker_data, 'delayedAsk', 0) or getattr(ticker_data, 'ask', 0)
+        if bid and ask and bid > 0 and ask > 0:
+            ib.cancelMktData(contract)
+            return (bid + ask) / 2
+
+        ib.cancelMktData(contract)
+        return None
+    except Exception as e:
+        print(f"Warning: Could not fetch delayed price for {contract.symbol}: {e}")
+        return None
+
+
 def _fetch_option_price(ib, contract):
     """Fetch latest price for an option contract via market data."""
     try:
@@ -106,10 +135,18 @@ def fetch_ibkr_portfolio(ib):
             market_price, timestamp = _fetch_stock_price(ib, contract)
             ticker = contract.symbol
         
-        # Fall back to average cost if market price unavailable
+        # Fall back to delayed/last/close price if market price unavailable
         if not market_price or market_price <= 0:
-            market_price = pos.avgCost
-            print(f"Using avgCost for {symbol_name}: ${market_price}")
+            print(f"Trying delayed/close price for {symbol_name}...")
+            delayed_price = _fetch_delayed_price(ib, contract)
+            if delayed_price and delayed_price > 0:
+                # For options, multiply by 100 (contract multiplier)
+                market_price = delayed_price * 100 if is_option else delayed_price
+                timestamp = datetime.now()
+                print(f"✓ Got delayed/close price for {symbol_name}: ${market_price}")
+            else:
+                market_price = pos.avgCost
+                print(f"⚠ No delayed price available, using avgCost for {symbol_name}: ${market_price}")
         else:
             print(f"✓ Got price for {symbol_name}: ${market_price}")
         
@@ -152,8 +189,9 @@ def rabalance_portfolio(config, current_position, output_callback=None):
 
     amount_in_pool = portfolio['CurrentValue'].sum()
     cash_mask = portfolio['Ticker'] == 'CASH'
-    tradable_funds = portfolio.loc[cash_mask, 'CurrentValue'].values[0]
+    tradable_funds = 0.0
     cash_ratio = portfolio.loc[cash_mask, 'Ratio'].values[0]
+    current_cash = portfolio.loc[cash_mask, 'CurrentValue'].values[0]
 
     output("Depending on your ratio setting, please make the following adjustment in order to rebalance your portfolio:")
 
@@ -206,13 +244,16 @@ def rabalance_portfolio(config, current_position, output_callback=None):
 
     # Phase 2: Reserve / release CASH to meet target
     if 'CASH' in trade_plan:
-        current_cash = portfolio.loc[cash_mask, 'CurrentValue'].values[0]
-        cash_needed = (amount_in_pool * cash_ratio) - current_cash
-        if cash_needed > 0:
-            output(f"Reserve ${cash_needed:.2f} in CASH to meet {cash_ratio:.2%} target")
-        elif cash_needed < 0:
-            output(f"Release ${abs(cash_needed):.2f} from CASH (exceeds {cash_ratio:.2%} target)")
-        tradable_funds -= cash_needed
+        target_cash = amount_in_pool * cash_ratio
+        cash_to_release = current_cash - target_cash
+        if cash_to_release > 0:
+            tradable_funds += cash_to_release
+            output(f"Release ${cash_to_release:.2f} from CASH to meet {cash_ratio:.2%} target (keep ${target_cash:.2f})")
+        elif cash_to_release < 0:
+            tradable_funds -= abs(cash_to_release)
+            output(f"Reserve ${abs(cash_to_release):.2f} into CASH to meet {cash_ratio:.2%} target")
+        else:
+            output(f"CASH is already at target ({cash_ratio:.2%})")
 
     # Phase 3: Process BUY orders with remaining funds
     for ticker, info in trade_plan.items():
