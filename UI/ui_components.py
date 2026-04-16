@@ -140,6 +140,10 @@ class UIComponents:
                                        style='Warning.TButton')
         self.withdraw_btn.pack(side='left', padx=6)
 
+        self.drawdown_btn = ttk.Button(btn_row, text='Drawdown Scan',
+                                       style='Accent.TButton')
+        self.drawdown_btn.pack(side='left', padx=6)
+
         self.disconnect_btn = ttk.Button(btn_row, text='Disconnect IBKR',
                                          style='Danger.TButton')
         self.disconnect_btn.pack(side='left', padx=6)

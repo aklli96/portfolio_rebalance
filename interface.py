@@ -5,7 +5,7 @@ import asyncio
 import tkinter as tk
 from io import StringIO
 
-from portfolio_data.cal_portfolio import fetch_ibkr_portfolio, ibkr_conn, read_config, rabalance_portfolio, calculate_withdrawal
+from portfolio_data.cal_portfolio import fetch_ibkr_portfolio, ibkr_conn, read_config, rabalance_portfolio, calculate_withdrawal, scan_drawdown
 from portfolio_data.order_executor import place_rebalance_orders
 from report import gen_report
 from UI.ui_components import UIComponents
@@ -23,6 +23,7 @@ class PortfolioApp:
         self.root = root
         self.root.title("Portfolio Rebalancer")
         self.is_scanning = False
+        self.is_drawdown_scanning = False
         self.refresh_interval = 5000
         self._last_rebalance_result = None
 
@@ -45,6 +46,7 @@ class PortfolioApp:
         self.ui.stop_btn.config(command=self.stop_scanning)
         self.ui.place_orders_btn.config(command=self.place_orders)
         self.ui.withdraw_btn.config(command=self.withdraw_money)
+        self.ui.drawdown_btn.config(command=self.drawdown_scan)
         self.ui.disconnect_btn.config(command=self.disconnect_ibkr)
     
         # Populate initial UI data
@@ -64,8 +66,10 @@ class PortfolioApp:
     def stop_scanning(self):
         logging.info("Stopping portfolio scanning")
         self.is_scanning = False
+        self.is_drawdown_scanning = False
+        self.ui.drawdown_btn.config(state='normal')
         self.ui.hide_stop_button()
-        self.ui.append_output("\nStopped portfolio scanning.\n")
+        self.ui.append_output("\nStopped scanning.\n")
     
     def refresh_current_positions(self):
         if not self.is_scanning:
@@ -335,6 +339,42 @@ class PortfolioApp:
                 self.ui.append_output(f"\nError disconnecting from IBKR: {e}\n")
         else:
             self.ui.append_output("\nNo IBKR connection to disconnect.\n")
+
+    def drawdown_scan(self):
+        """Scan stocks for drawdown from their 365-day high, repeating every 60 seconds."""
+        if self.is_drawdown_scanning:
+            return
+        logging.info("Starting drawdown scan")
+        self.is_drawdown_scanning = True
+        self.ui.drawdown_btn.config(state='disabled')
+        self.ui.show_output_lines(["Starting drawdown scan...\n"])
+        self.ui.show_stop_button()
+        self._run_drawdown_cycle()
+
+    def stop_drawdown_scan(self):
+        logging.info("Stopping drawdown scan")
+        self.is_drawdown_scanning = False
+        self.ui.drawdown_btn.config(state='normal')
+        self.ui.append_output("\nDrawdown scanning stopped.\n")
+
+    def _run_drawdown_cycle(self):
+        if not self.is_drawdown_scanning:
+            return
+
+        def live_output(msg):
+            self.ui.append_output(msg + "\n")
+            self.root.update()
+
+        try:
+            scan_drawdown(self.ib, self.config, output_callback=live_output)
+        except Exception as e:
+            error_msg = f"\nError during drawdown scan: {str(e)}"
+            logging.error(error_msg)
+            self.ui.append_output(error_msg)
+
+        if self.is_drawdown_scanning:
+            self.ui.append_output("\nNext scan in 60 seconds... (click Stop to cancel)\n")
+            self.root.after(60000, self._run_drawdown_cycle)
 
     def _reload_config(self):
         try:

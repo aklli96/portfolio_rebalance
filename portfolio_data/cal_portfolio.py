@@ -1,5 +1,5 @@
 import pandas as pd
-from ib_insync import IB
+from ib_insync import IB, Stock
 import math
 from datetime import datetime
 
@@ -363,3 +363,111 @@ def calculate_withdrawal(config, current_position, withdraw_amount, output_callb
     output(f"Actual withdrawable amount: ${total_to_sell:,.2f}")
 
     return withdrawal_plan
+
+
+def scan_drawdown(ib, config, output_callback=None):
+    """Scan stocks for drawdown from their 365-day high in 5% increments."""
+    output = _resolve_output(output_callback)
+
+    output("Scanning stocks for drawdown from 365-day high...")
+    output("=" * 70)
+
+    stock_tickers = [
+        row['Ticker'] for _, row in config.iterrows()
+        if row['Ticker'] != 'CASH'
+        and not row['Ticker'].endswith(' P')
+        and not row['Ticker'].endswith(' C')
+    ]
+    total = len(stock_tickers)
+    output(f"Found {total} stock(s) to scan.")
+    output("")
+
+    results = []
+
+    for idx, ticker in enumerate(stock_tickers, 1):
+        scan_time = datetime.now().strftime('%H:%M:%S')
+        output(f"[{scan_time}] ({idx}/{total}) {ticker}: Qualifying contract...")
+
+        try:
+            contract = Stock(ticker, 'SMART', 'USD')
+            ib.qualifyContracts(contract)
+            output(f"[{scan_time}] ({idx}/{total}) {ticker}: Requesting 1Y historical data...")
+            bars = ib.reqHistoricalData(
+                contract,
+                endDateTime='',
+                durationStr='1 Y',
+                barSizeSetting='1 day',
+                whatToShow='TRADES',
+                useRTH=True,
+                timeout=60,
+            )
+
+            if not bars:
+                output(f"[{scan_time}] ({idx}/{total}) {ticker}: No historical data available")
+                continue
+
+            output(f"[{scan_time}] ({idx}/{total}) {ticker}: Received {len(bars)} daily bars")
+
+            high_365 = max(b.high for b in bars)
+            current_price = bars[-1].close
+
+            if high_365 <= 0:
+                output(f"[{scan_time}] ({idx}/{total}) {ticker}: Invalid high price")
+                continue
+
+            drawdown_pct = ((high_365 - current_price) / high_365) * 100
+            # Find which 5% bucket this falls into
+            bucket = int(drawdown_pct // 5) * 5
+
+            results.append({
+                'Ticker': ticker,
+                'High_365': high_365,
+                'Current': current_price,
+                'Drawdown_Pct': drawdown_pct,
+                'Bucket': bucket,
+            })
+
+            output(f"[{scan_time}] ({idx}/{total}) {ticker}: 365-day High = ${high_365:,.2f} | "
+                   f"Current = ${current_price:,.2f} | "
+                   f"Drawdown = {drawdown_pct:.1f}%")
+
+        except Exception as e:
+            output(f"[{scan_time}] ({idx}/{total}) {ticker}: Error - {e}")
+
+    output("")
+    output("=" * 70)
+    output("Drawdown Summary (5% buckets):")
+    output("-" * 40)
+
+    if not results:
+        output("No stock data available for drawdown analysis.")
+        return results
+
+    # Group by 5% buckets
+    buckets = {}
+    for r in results:
+        b = r['Bucket']
+        if b not in buckets:
+            buckets[b] = []
+        buckets[b].append(r)
+
+    for bucket_val in sorted(buckets.keys()):
+        tickers_in_bucket = buckets[bucket_val]
+        label = f"{bucket_val}%-{bucket_val + 5}%"
+        ticker_list = ", ".join(
+            f"{r['Ticker']} ({r['Drawdown_Pct']:.1f}%)" for r in tickers_in_bucket
+        )
+        output(f"  {label}: {ticker_list}")
+
+    output("")
+    # Highlight stocks down 5% or more
+    alerts = [r for r in results if r['Drawdown_Pct'] >= 5]
+    if alerts:
+        output("Stocks down 5%+ from 365-day high:")
+        for r in sorted(alerts, key=lambda x: -x['Drawdown_Pct']):
+            output(f"  {r['Ticker']}: down {r['Drawdown_Pct']:.1f}% "
+                   f"(from ${r['High_365']:,.2f} to ${r['Current']:,.2f})")
+    else:
+        output("No stocks are down 5% or more from their 365-day high.")
+
+    return results
