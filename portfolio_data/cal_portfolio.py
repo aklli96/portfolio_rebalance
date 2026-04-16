@@ -12,6 +12,10 @@ def _resolve_output(output_callback):
 def read_config():
     config = pd.read_csv('portfolio_setting.csv')
     config['Ratio'] = config['Ratio'].str.rstrip('%').astype(float) / 100
+    if 'drawdown' in config.columns:
+        config['drawdown'] = config['drawdown'].apply(
+            lambda x: float(str(x).rstrip('%')) if str(x).strip().rstrip('%').replace('.', '', 1).isdigit() else 0
+        )
     return config
 
 
@@ -366,25 +370,33 @@ def calculate_withdrawal(config, current_position, withdraw_amount, output_callb
 
 
 def scan_drawdown(ib, config, output_callback=None):
-    """Scan stocks for drawdown from their 365-day high in 5% increments."""
+    """Scan stocks for drawdown from their 365-day high using per-ticker thresholds from config."""
     output = _resolve_output(output_callback)
 
     output("Scanning stocks for drawdown from 365-day high...")
     output("=" * 70)
 
-    stock_tickers = [
-        row['Ticker'] for _, row in config.iterrows()
+    stock_rows = [
+        row for _, row in config.iterrows()
         if row['Ticker'] != 'CASH'
         and not row['Ticker'].endswith(' P')
         and not row['Ticker'].endswith(' C')
+        and row.get('drawdown', 0) > 0
     ]
-    total = len(stock_tickers)
+    total = len(stock_rows)
+    if total == 0:
+        output("No stocks with a drawdown threshold configured.")
+        return []
+    for row in stock_rows:
+        output(f"  {row['Ticker']}: alert every {row['drawdown']:.0f}% drawdown")
     output(f"Found {total} stock(s) to scan.")
     output("")
 
     results = []
 
-    for idx, ticker in enumerate(stock_tickers, 1):
+    for idx, row in enumerate(stock_rows, 1):
+        ticker = row['Ticker']
+        threshold = row['drawdown']
         scan_time = datetime.now().strftime('%H:%M:%S')
         output(f"[{scan_time}] ({idx}/{total}) {ticker}: Qualifying contract...")
 
@@ -416,8 +428,8 @@ def scan_drawdown(ib, config, output_callback=None):
                 continue
 
             drawdown_pct = ((high_365 - current_price) / high_365) * 100
-            # Find which 5% bucket this falls into
-            bucket = int(drawdown_pct // 5) * 5
+            # Find which bucket this falls into based on per-ticker threshold
+            bucket = int(drawdown_pct // threshold) * int(threshold)
 
             results.append({
                 'Ticker': ticker,
@@ -425,6 +437,7 @@ def scan_drawdown(ib, config, output_callback=None):
                 'Current': current_price,
                 'Drawdown_Pct': drawdown_pct,
                 'Bucket': bucket,
+                'Threshold': threshold,
             })
 
             output(f"[{scan_time}] ({idx}/{total}) {ticker}: 365-day High = ${high_365:,.2f} | "
@@ -436,38 +449,31 @@ def scan_drawdown(ib, config, output_callback=None):
 
     output("")
     output("=" * 70)
-    output("Drawdown Summary (5% buckets):")
+    output("Drawdown Summary:")
     output("-" * 40)
 
     if not results:
         output("No stock data available for drawdown analysis.")
         return results
 
-    # Group by 5% buckets
-    buckets = {}
+    # Group by per-ticker threshold buckets
     for r in results:
+        t = int(r['Threshold'])
         b = r['Bucket']
-        if b not in buckets:
-            buckets[b] = []
-        buckets[b].append(r)
-
-    for bucket_val in sorted(buckets.keys()):
-        tickers_in_bucket = buckets[bucket_val]
-        label = f"{bucket_val}%-{bucket_val + 5}%"
-        ticker_list = ", ".join(
-            f"{r['Ticker']} ({r['Drawdown_Pct']:.1f}%)" for r in tickers_in_bucket
-        )
-        output(f"  {label}: {ticker_list}")
+        label = f"{b}%-{b + t}%"
+        output(f"  {r['Ticker']} (threshold {t}%): bucket {label} | actual {r['Drawdown_Pct']:.1f}%")
 
     output("")
-    # Highlight stocks down 5% or more
-    alerts = [r for r in results if r['Drawdown_Pct'] >= 5]
+    # Highlight stocks that have crossed at least one threshold
+    alerts = [r for r in results if r['Drawdown_Pct'] >= r['Threshold']]
     if alerts:
-        output("Stocks down 5%+ from 365-day high:")
+        output("Stocks exceeding their drawdown threshold:")
         for r in sorted(alerts, key=lambda x: -x['Drawdown_Pct']):
+            crossed = int(r['Drawdown_Pct'] // r['Threshold'])
             output(f"  {r['Ticker']}: down {r['Drawdown_Pct']:.1f}% "
-                   f"(from ${r['High_365']:,.2f} to ${r['Current']:,.2f})")
+                   f"(crossed {crossed}x {int(r['Threshold'])}% threshold) "
+                   f"from ${r['High_365']:,.2f} to ${r['Current']:,.2f}")
     else:
-        output("No stocks are down 5% or more from their 365-day high.")
+        output("No stocks have crossed their drawdown threshold.")
 
     return results
