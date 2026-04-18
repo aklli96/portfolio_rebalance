@@ -16,6 +16,10 @@ def read_config():
         config['drawdown'] = config['drawdown'].apply(
             lambda x: float(str(x).rstrip('%')) if str(x).strip().rstrip('%').replace('.', '', 1).isdigit() else 0
         )
+    if 'rebal_ratio_if_hit_dd' in config.columns:
+        config['rebal_ratio_if_hit_dd'] = config['rebal_ratio_if_hit_dd'].apply(
+            lambda x: float(str(x).rstrip('%')) / 100 if str(x).strip().rstrip('%').replace('.', '', 1).isdigit() else 0
+        )
     return config
 
 

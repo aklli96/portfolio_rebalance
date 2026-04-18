@@ -104,6 +104,22 @@ class PortfolioApp:
         if self.is_scanning:
             self.root.after(self.refresh_interval, self.refresh_current_positions)
 
+    def _apply_drawdown_adjustment(self, position):
+        """Return a copy of the position DataFrame with CurrentValue and MarketPrice
+        reduced by each ticker's drawdown threshold percentage from config."""
+        adjusted = position.copy()
+        for _, cfg_row in self.config.iterrows():
+            ticker = cfg_row['Ticker']
+            dd_pct = cfg_row.get('drawdown', 0)
+            if dd_pct <= 0 or ticker == 'CASH':
+                continue
+            mask = adjusted['Ticker'] == ticker
+            if mask.any():
+                factor = 1 - dd_pct / 100
+                adjusted.loc[mask, 'CurrentValue'] = adjusted.loc[mask, 'CurrentValue'] * factor
+                adjusted.loc[mask, 'MarketPrice'] = adjusted.loc[mask, 'MarketPrice'] * factor
+        return adjusted
+
     def rebalance(self):
         logging.info("Starting portfolio rebalance calculation")
 
@@ -112,7 +128,27 @@ class PortfolioApp:
             output_lines.append(str(msg))
             logging.info(f"Rebalance calc: {msg}")
 
-        result = rabalance_portfolio(self.config, self.current_position, output_callback=gui_output)
+        if self.is_drawdown_scanning:
+            gui_output("Drawdown mode active — simulating current values after drawdown:")
+            for _, cfg_row in self.config.iterrows():
+                dd_pct = cfg_row.get('drawdown', 0)
+                if dd_pct > 0 and cfg_row['Ticker'] != 'CASH':
+                    gui_output(f"  {cfg_row['Ticker']}: -{dd_pct:.0f}%")
+            gui_output("")
+            position = self._apply_drawdown_adjustment(self.current_position)
+            # Use rebal_ratio_if_hit_dd as the Ratio for drawdown rebalancing
+            dd_config = self.config.copy()
+            if 'rebal_ratio_if_hit_dd' in dd_config.columns:
+                dd_config['Ratio'] = dd_config['rebal_ratio_if_hit_dd']
+                gui_output("Using drawdown rebalance ratios:")
+                for _, r in dd_config.iterrows():
+                    gui_output(f"  {r['Ticker']}: {r['Ratio']:.2%}")
+                gui_output("")
+        else:
+            position = self.current_position
+            dd_config = self.config
+
+        result = rabalance_portfolio(dd_config, position, output_callback=gui_output)
         self._last_rebalance_result = result
         self.ui.show_output_lines(output_lines)
         self.ui.report_btn.config(state='normal' if result is not None else 'disabled')
