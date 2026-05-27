@@ -25,6 +25,7 @@ terraform.tfstate.backup
 *.tfstate.*
 .Python
 .terraform/
+.venv/
 build/
 develop-eggs/
 dist/
