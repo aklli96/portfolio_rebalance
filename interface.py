@@ -26,6 +26,7 @@ class PortfolioApp:
         self.is_drawdown_scanning = False
         self.refresh_interval = 5000
         self._last_rebalance_result = None
+        self._last_rebalance_is_drawdown = False
 
         # Initialize IBKR connection and data
         self.ib = ibkr_conn()
@@ -66,6 +67,9 @@ class PortfolioApp:
     def stop_scanning(self):
         logging.info("Stopping portfolio scanning")
         self.is_scanning = False
+        if self.is_drawdown_scanning:
+            self._last_rebalance_result = None   # force re-rebalance in normal mode
+            self._last_rebalance_is_drawdown = False
         self.is_drawdown_scanning = False
         self.ui.drawdown_btn.config(state='normal')
         self.ui.hide_stop_button()
@@ -150,6 +154,7 @@ class PortfolioApp:
 
         result = rabalance_portfolio(dd_config, position, output_callback=gui_output)
         self._last_rebalance_result = result
+        self._last_rebalance_is_drawdown = self.is_drawdown_scanning
         self.ui.show_output_lines(output_lines)
         self.ui.report_btn.config(state='normal' if result is not None else 'disabled')
         
@@ -276,7 +281,10 @@ class PortfolioApp:
             if shares <= 0 or action not in ('Buy', 'Sell'):
                 continue
             if action == 'Buy':
-                buy_lines.append(f"  BUY  {shares:>5}  {ticker:<8}  LIMIT @ ${price:,.2f}  [DAY]")
+                if self._last_rebalance_is_drawdown:
+                    buy_lines.append(f"  BUY  {shares:>5}  {ticker:<8}  LIMIT @ ${price:,.2f}  [DAY]")
+                else:
+                    buy_lines.append(f"  BUY  {shares:>5}  {ticker:<8}  MARKET  [DAY]")
             else:
                 sell_lines.append(f"  SELL {shares:>5}  {ticker:<8}  MARKET  [DAY]")
 
@@ -284,12 +292,13 @@ class PortfolioApp:
             self.ui.append_output("\nNo actionable orders in the current rebalance plan.\n")
             return
 
+        buy_header = "── Buy (Limit) ──────────────────" if self._last_rebalance_is_drawdown else "── Buy (Market) ─────────────────"
         summary_parts = []
         if sell_lines:
             summary_parts.append("── Sell (Market) ─────────────────")
             summary_parts.extend(sell_lines)
         if buy_lines:
-            summary_parts.append("── Buy (Limit) ──────────────────")
+            summary_parts.append(buy_header)
             summary_parts.extend(buy_lines)
         summary_text = "\n".join(summary_parts)
 
@@ -359,7 +368,8 @@ class PortfolioApp:
         try:
             place_rebalance_orders(
                 self.ib, trade_plan,
-                output_callback=lambda msg: self.ui.append_output(msg + "\n")
+                output_callback=lambda msg: self.ui.append_output(msg + "\n"),
+                is_drawdown=self._last_rebalance_is_drawdown
             )
         except Exception as exc:
             self.ui.append_output(f"Error placing orders: {exc}\n")
@@ -382,6 +392,8 @@ class PortfolioApp:
             return
         logging.info("Starting drawdown scan")
         self.is_drawdown_scanning = True
+        self._last_rebalance_result = None       # force re-rebalance in drawdown mode
+        self._last_rebalance_is_drawdown = False
         self.ui.drawdown_btn.config(state='disabled')
         self.ui.show_output_lines(["Starting drawdown scan...\n"])
         self.ui.show_stop_button()

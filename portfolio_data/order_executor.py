@@ -1,8 +1,13 @@
 """
 IBKR Order Executor – places rebalance trades via the Interactive Brokers API.
 
-Buy  orders → Limit order at the current market price (from the rebalance plan).
-Sell orders → Market order.
+Regular rebalance:
+  Buy  orders → Market order.
+  Sell orders → Market order.
+
+Drawdown rebalance:
+  Buy  orders → Limit order at the current market price (from the rebalance plan).
+  Sell orders → Market order.
 
 All orders use tif='DAY' and outsideRth=False so they:
   • remain pending when placed outside market hours,
@@ -16,7 +21,7 @@ from ib_insync import Stock, MarketOrder, LimitOrder
 logger = logging.getLogger(__name__)
 
 
-def place_rebalance_orders(ib, trade_plan, output_callback=None):
+def place_rebalance_orders(ib, trade_plan, output_callback=None, is_drawdown=False):
     """
     Place orders for every actionable entry in *trade_plan*.
 
@@ -29,6 +34,10 @@ def place_rebalance_orders(ib, trade_plan, output_callback=None):
         Expected keys per ticker: action, shares, market_price.
     output_callback : callable, optional
         Function called with status strings (defaults to ``print``).
+    is_drawdown : bool, optional
+        When True (drawdown rebalance), Buy orders are placed as Limit orders
+        at the current market price.  When False (regular rebalance), Buy orders
+        are placed as Market orders.  Sell orders are always Market orders.
 
     Returns
     -------
@@ -53,11 +62,16 @@ def place_rebalance_orders(ib, trade_plan, output_callback=None):
         ib.qualifyContracts(contract)
 
         if action == 'Buy':
-            # Limit order at the current market price – DAY only
-            order = LimitOrder('BUY', shares, round(market_price, 2))
+            if is_drawdown:
+                # Drawdown rebalance – Limit order at the current market price
+                order = LimitOrder('BUY', shares, round(market_price, 2))
+                order_desc = f"LIMIT BUY {shares} x {ticker} @ ${market_price:.2f} [DAY]"
+            else:
+                # Regular rebalance – Market order
+                order = MarketOrder('BUY', shares)
+                order_desc = f"MARKET BUY {shares} x {ticker} [DAY]"
             order.tif = 'DAY'
             order.outsideRth = False
-            order_desc = f"LIMIT BUY {shares} x {ticker} @ ${market_price:.2f} [DAY]"
         else:
             # Market order for sells – DAY only
             order = MarketOrder('SELL', shares)
