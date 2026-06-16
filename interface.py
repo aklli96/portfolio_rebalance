@@ -27,6 +27,7 @@ class PortfolioApp:
         self.refresh_interval = 5000
         self._last_rebalance_result = None
         self._last_rebalance_is_drawdown = False
+        self._drawdown_scan_results = {}  # ticker -> high_365
 
         # Initialize IBKR connection and data
         self.ib = ibkr_conn()
@@ -110,7 +111,8 @@ class PortfolioApp:
 
     def _apply_drawdown_adjustment(self, position):
         """Return a copy of the position DataFrame with CurrentValue and MarketPrice
-        reduced by each ticker's drawdown threshold percentage from config."""
+        set to the drawdown threshold price: high_365 * (1 - threshold%).
+        Falls back to current_price * (1 - threshold%) if scan data is unavailable."""
         adjusted = position.copy()
         for _, cfg_row in self.config.iterrows():
             ticker = cfg_row['Ticker']
@@ -119,9 +121,18 @@ class PortfolioApp:
                 continue
             mask = adjusted['Ticker'] == ticker
             if mask.any():
-                factor = 1 - dd_pct / 100
-                adjusted.loc[mask, 'CurrentValue'] = adjusted.loc[mask, 'CurrentValue'] * factor
-                adjusted.loc[mask, 'MarketPrice'] = adjusted.loc[mask, 'MarketPrice'] * factor
+                high_365 = self._drawdown_scan_results.get(ticker)
+                if high_365 and high_365 > 0:
+                    # Use the exact drawdown threshold price: 52-week high * (1 - threshold%)
+                    threshold_price = high_365 * (1 - dd_pct / 100)
+                    qty = adjusted.loc[mask, 'Quantity'].values[0]
+                    adjusted.loc[mask, 'MarketPrice'] = threshold_price
+                    adjusted.loc[mask, 'CurrentValue'] = qty * threshold_price
+                else:
+                    # Fallback when scan hasn't run yet
+                    factor = 1 - dd_pct / 100
+                    adjusted.loc[mask, 'CurrentValue'] = adjusted.loc[mask, 'CurrentValue'] * factor
+                    adjusted.loc[mask, 'MarketPrice'] = adjusted.loc[mask, 'MarketPrice'] * factor
         return adjusted
 
     def rebalance(self):
@@ -402,6 +413,7 @@ class PortfolioApp:
     def stop_drawdown_scan(self):
         logging.info("Stopping drawdown scan")
         self.is_drawdown_scanning = False
+        self._drawdown_scan_results = {}
         self.ui.drawdown_btn.config(state='normal')
         self.ui.append_output("\nDrawdown scanning stopped.\n")
 
@@ -414,7 +426,9 @@ class PortfolioApp:
             self.root.update()
 
         try:
-            scan_drawdown(self.ib, self.config, output_callback=live_output)
+            scan_results = scan_drawdown(self.ib, self.config, output_callback=live_output)
+            if scan_results:
+                self._drawdown_scan_results = {r['Ticker']: r['High_365'] for r in scan_results}
         except Exception as e:
             error_msg = f"\nError during drawdown scan: {str(e)}"
             logging.error(error_msg)
