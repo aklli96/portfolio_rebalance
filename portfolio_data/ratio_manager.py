@@ -74,9 +74,14 @@ class RatioManager:
         return True
 
     def save_ratios(self):
-        ratios = self._get_all_ratios()
-        new_df = pd.DataFrame(ratios, columns=['Ticker', 'Ratio'])
-        new_df['Ratio'] = new_df['Ratio'].apply(lambda x: f"{x:.2%}")
+        ratios = dict(self._get_all_ratios())
+        try:
+            # Preserve extra config columns (drawdown, rebal_ratio_if_hit_dd)
+            new_df = pd.read_csv('portfolio_setting.csv')
+            new_df['Ratio'] = new_df['Ticker'].map(lambda t: f"{ratios.get(t, 0.0):.2%}")
+        except (OSError, KeyError):
+            new_df = pd.DataFrame(ratios.items(), columns=['Ticker', 'Ratio'])
+            new_df['Ratio'] = new_df['Ratio'].apply(lambda x: f"{x:.2%}")
         new_df.to_csv('portfolio_setting.csv', index=False)
         if self.on_config_saved:
             self.on_config_saved()

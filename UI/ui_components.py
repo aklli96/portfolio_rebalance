@@ -119,6 +119,10 @@ class UIComponents:
                                         style='Accent.TButton')
         self.rebalance_btn.pack(side='left', padx=(0, 6))
 
+        self.drawdown_rebalance_btn = ttk.Button(btn_row, text='Drawdown Rebalance',
+                                                 style='Accent.TButton')
+        self.drawdown_rebalance_btn.pack(side='left', padx=(0, 6))
+
         self.scan_btn = ttk.Button(btn_row, text='Start Scanning',
                                    style='Muted.TButton')
         self.scan_btn.pack(side='left', padx=6)
@@ -220,6 +224,11 @@ class UIComponents:
             df = cfg.copy()
             if 'Ratio' in df.columns:
                 df['Ratio'] = df['Ratio'].apply(lambda x: f"{x:.3%}")
+            if 'drawdown' in df.columns:
+                df['drawdown'] = df['drawdown'].apply(lambda x: f"-{x:.0f}%" if x else '-')
+            if 'rebal_ratio_if_hit_dd' in df.columns:
+                df['rebal_ratio_if_hit_dd'] = df['rebal_ratio_if_hit_dd'].apply(
+                    lambda x: f"{x:.3%}" if x else '-')
 
         cols = list(df.columns)
         for item in self.ratio_tree.get_children():

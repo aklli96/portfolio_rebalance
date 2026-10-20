@@ -43,6 +43,7 @@ class PortfolioApp:
 
         # Wire up button callbacks
         self.ui.rebalance_btn.config(command=self.rebalance)
+        self.ui.drawdown_rebalance_btn.config(command=self.rebalance_drawdown)
         self.ui.scan_btn.config(command=self.start_scanning)
         self.ui.report_btn.config(command=self.gen_report)
         self.ui.stop_btn.config(command=self.stop_scanning)
@@ -111,8 +112,9 @@ class PortfolioApp:
 
     def _apply_drawdown_adjustment(self, position):
         """Return a copy of the position DataFrame with CurrentValue and MarketPrice
-        set to the drawdown threshold price: high_365 * (1 - threshold%).
-        Falls back to current_price * (1 - threshold%) if scan data is unavailable."""
+        of every ticker with a drawdown threshold set to its threshold price:
+        high_365 * (1 - threshold%). When the true 52-week high is unknown
+        (no scan has run), falls back to current_price * (1 - threshold%)."""
         adjusted = position.copy()
         for _, cfg_row in self.config.iterrows():
             ticker = cfg_row['Ticker']
@@ -136,14 +138,35 @@ class PortfolioApp:
         return adjusted
 
     def rebalance(self):
-        logging.info("Starting portfolio rebalance calculation")
+        """Run the standard rebalance calculation against current prices/ratios."""
+        self._run_rebalance(use_drawdown=self.is_drawdown_scanning)
+
+    def rebalance_drawdown(self):
+        """One-shot drawdown rebalance calculation (no scanning required).
+
+        Simulates each ticker with a drawdown threshold at its dropped price
+        (52-week high * (1 - threshold%) when the true high is known, otherwise
+        current price * (1 - threshold%)) and calculates the trades needed to
+        reach the rebal_ratio_if_hit_dd ratios.
+        """
+        if 'drawdown' not in self.config.columns or self.config['drawdown'].sum() <= 0:
+            self.ui.show_output_lines([
+                "No drawdown thresholds configured.",
+                "Add a 'drawdown' column (e.g. 5% for VT) and a "
+                "'rebal_ratio_if_hit_dd' column to portfolio_setting.csv first."
+            ])
+            return
+        self._run_rebalance(use_drawdown=True)
+
+    def _run_rebalance(self, use_drawdown):
+        logging.info(f"Starting portfolio rebalance calculation (drawdown={use_drawdown})")
 
         output_lines = []
         def gui_output(msg):
             output_lines.append(str(msg))
             logging.info(f"Rebalance calc: {msg}")
 
-        if self.is_drawdown_scanning:
+        if use_drawdown:
             gui_output("Drawdown mode active — simulating current values after drawdown:")
             for _, cfg_row in self.config.iterrows():
                 dd_pct = cfg_row.get('drawdown', 0)
@@ -165,7 +188,7 @@ class PortfolioApp:
 
         result = rabalance_portfolio(dd_config, position, output_callback=gui_output)
         self._last_rebalance_result = result
-        self._last_rebalance_is_drawdown = self.is_drawdown_scanning
+        self._last_rebalance_is_drawdown = use_drawdown
         self.ui.show_output_lines(output_lines)
         self.ui.report_btn.config(state='normal' if result is not None else 'disabled')
         
